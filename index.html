@@ -230,25 +230,26 @@ world.gravity.set(0, -9.82, 0); // Changed from -9.82 * 1.5
         const groundPhysMaterial = new CANNON.Material("groundMaterial");
         const dominoPhysMaterial = new CANNON.Material("dominoMaterial");
 
-const groundDominoContactMaterial = new CANNON.ContactMaterial(
-    groundPhysMaterial,
-    dominoPhysMaterial,
-    { friction: 1.5, restitution: 0.0, contactEquationStiffness: 1e6, contactEquationRelaxation: 3 } // Friction from 0.9 to 1.5
-);
+        // --- Physics ---
+        const groundDominoContactMaterial = new CANNON.ContactMaterial(
+            groundPhysMaterial,
+            dominoPhysMaterial,
+            { friction: 1.5, restitution: 0.0, contactEquationStiffness: 1e5, contactEquationRelaxation: 3 }
+        );
         world.addContactMaterial(groundDominoContactMaterial);
 
-const dominoDominoContactMaterial = new CANNON.ContactMaterial(
-    dominoPhysMaterial,
-    dominoPhysMaterial,
-    {
-        friction: 0.1,  // Reduced from 0.8 to allow smoother sliding
-        restitution: 0.0, // No bounciness
-        contactEquationStiffness: 1e6,
-        contactEquationRelaxation: 4,
-        contactSkinSize: 0.001
-    }
-);
-world.addContactMaterial(dominoDominoContactMaterial);
+        const dominoDominoContactMaterial = new CANNON.ContactMaterial(
+            dominoPhysMaterial,
+            dominoPhysMaterial,
+            {
+                friction: 0.5, // Increased for smoother toppling
+                restitution: 0.0,
+                contactEquationStiffness: 1e5, // Reduced stiffness
+                contactEquationRelaxation: 4,
+                contactSkinSize: 0 // Prevents premature collision detection
+            }
+        );
+        world.addContactMaterial(dominoDominoContactMaterial);
 
         // --- Ground ---
         const groundGeometry = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE);
@@ -372,6 +373,7 @@ world.addContactMaterial(dominoDominoContactMaterial);
                 showNotification("Error: Domino model not ready.", true);
                 return null;
             }
+
             const dominoMesh = dominoModel.clone();
             dominoMesh.userData.isDomino = true;
             const modelPivotToBottomY_offset = dominoModel.userData.pivotToBottomY || 0;
@@ -388,15 +390,15 @@ world.addContactMaterial(dominoDominoContactMaterial);
 
             const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_WIDE / 2, DOMINO_TALL / 2, DOMINO_THICK / 2));
             const bodyCoMPosition = new CANNON.Vec3(basePosition.x, basePosition.y + DOMINO_TALL / 2, basePosition.z);
-const dominoBody = new CANNON.Body({
-    mass: 0.3,
-    position: bodyCoMPosition,
-    shape: shape,
-    material: dominoPhysMaterial,
-    linearDamping: 0.1,  // Increased from 0.05
-    angularDamping: 0.1, // Increased from 0.05
-    collisionResponse: true
-});
+            const dominoBody = new CANNON.Body({
+                mass: 0.3,
+                position: bodyCoMPosition,
+                shape: shape,
+                material: dominoPhysMaterial,
+                linearDamping: 0.1,
+                angularDamping: 0.1,
+                collisionResponse: true
+            });
             dominoBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
             dominoBody.allowSleep = true;
             dominoBody.sleepSpeedLimit = 0.5;
@@ -416,7 +418,6 @@ const dominoBody = new CANNON.Body({
             world.addBody(dominoBody);
             return data;
         }
-
         // --- Collision & Placement ---
         function snapToGrid(position) {
             const snappedX = Math.round(position.x / GRID_UNIT_SIZE) * GRID_UNIT_SIZE;
@@ -698,27 +699,32 @@ const dominoBody = new CANNON.Body({
         }
 
         // --- Simulation Control ---
-function startSimulation() {
-    if (dominoData.length === 0) {
-        showNotification("Add some dominoes first!");
-        return;
-    }
-    if (isSimulating) return;
-    clearSimulationArrows();
-    isSimulating = true;
-    world.allowSleep = false;
-    const firstDomino = dominoData[0];
-    if (firstDomino && firstDomino.body) {
-        firstDomino.body.wakeUp();
-        const localImpulse = new CANNON.Vec3(IMPULSE_MAGNITUDE, 0, 0); // Uses global IMPULSE_MAGNITUDE = 1.0
-        const appPointLocal = new CANNON.Vec3(-DOMINO_WIDE / 2, DOMINO_TALL * 0.75, 0);
-        const worldImpulse = firstDomino.body.quaternion.vmult(localImpulse);
-        const worldApplicationPoint = firstDomino.body.quaternion.vmult(appPointLocal);
-        worldApplicationPoint.vadd(firstDomino.body.position, worldApplicationPoint);
-        firstDomino.body.applyImpulse(worldImpulse, worldApplicationPoint);
-    }
-    showNotification("Simulation started!");
-}
+        // --- Simulation Control ---
+        function startSimulation() {
+            if (dominoData.length === 0) {
+                showNotification("Add some dominoes first!");
+                return;
+            }
+            if (isSimulating) return;
+
+            clearSimulationArrows();
+            isSimulating = true;
+            world.allowSleep = false;
+
+            if (selectedDominoData && selectedDominoData.body) {
+                selectedDominoData.body.wakeUp();
+                const localImpulse = new CANNON.Vec3(IMPULSE_MAGNITUDE, 0, 0);
+                const appPointLocal = new CANNON.Vec3(-DOMINO_WIDE / 2, DOMINO_TALL * 0.75, 0);
+                const worldImpulse = selectedDominoData.body.quaternion.vmult(localImpulse);
+                const worldApplicationPoint = selectedDominoData.body.quaternion.vmult(appPointLocal);
+                worldApplicationPoint.vadd(selectedDominoData.body.position, worldApplicationPoint);
+                selectedDominoData.body.applyImpulse(worldImpulse, worldApplicationPoint);
+            } else {
+                showNotification("Select a domino to start the simulation!", true);
+            }
+
+            showNotification("Simulation started!");
+        }
 
         function resetSimulation() {
             isSimulating = false;
