@@ -98,8 +98,20 @@
             </div>
         </div>
         <div class="toolbar-section">
+            <div class="toolbar-section-title">Add Batch</div>
+            <div class="toolbar-button" id="add-batch-button">
+                <div class="toolbar-button-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                        <rect x="4" y="6" width="4" height="12" fill="#333"/>
+                        <rect x="10" y="6" width="4" height="12" fill="#333"/>
+                        <rect x="16" y="6" width="4" height="12" fill="#333"/>
+                    </svg>
+                </div>
+                <span>Add Batch</span>
+            </div>
+        </div>
+        <div class="toolbar-section">
             <div class="toolbar-section-title">Simulation</div>
-            <div class="toolbar-button start" id="start-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><polygon points="5,3 19,12 5,21" fill="green"/></svg></div><span>Start Simulation</span></div>
             <div class="toolbar-button reset" id="reset-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z" fill="#ff9800"/></svg></div><span>Reset Scene</span></div>
             <div class="toolbar-button clear" id="clear-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19M8,9H16V19H8V9M15.5,4L14.5,3H9.5L8.5,4H5V6H19V4H15.5Z" fill="#f44336"/></svg></div><span>Clear Canvas</span></div>
         </div>
@@ -109,7 +121,7 @@
         </div>
     </div>
     <div id="corner-panel">
-        <button id="toggle-orbit">Lock Camera</button>
+        <button id="toggle-orbit">Lock Camera</button> 
         <button id="reset-camera">Reset Camera</button>
         <div id="help-button">?</div>
     </div>
@@ -131,21 +143,22 @@
             <h3>Controls</h3>
             <ul>
                 <li><strong>Add Domino:</strong> Drag from the toolbar to the canvas (snaps to grid)</li>
+                <li><strong>Add Batch:</strong> Click "Add Batch", enter number (2-20), drag to place</li>
                 <li><strong>Select:</strong> Left-click on a domino</li>
                 <li><strong>Hover:</strong> Mouse over a domino to highlight blue</li>
                 <li><strong>Move (T):</strong> Right-click domino -> Move, then left-click & drag</li>
                 <li><strong>Rotate (R):</strong> Right-click domino -> Rotate, then left-click & drag horizontally</li>
-                <li><strong>Delete (Del):</strong> Right-click domino -> Delete, or select domino and press Delete/Backspace key</li>
-                <li><strong>Start Simulation (Space):</strong> Click the green play button or press Spacebar</li>
+                <li><strong>Delete (Del):</strong> Right-click domino -> Delete, or press Delete/Backspace</li>
+                <li><strong>Start Simulation (Space):</strong> Press Spacebar or use context menu arrows</li>
                 <li><strong>Reset:</strong> Click the reset button</li>
                 <li><strong>Clear:</strong> Remove all dominoes</li>
-                <li><strong>Toggle Grid (G):</strong> Checkbox in the toolbar or press G</li>
-                <li><strong>Context Menu:</strong> Right-click on a domino for options</li>
+                <li><strong>Toggle Grid (G):</strong> Checkbox or press G</li>
+                <li><strong>Context Menu:</strong> Right-click on a domino</li>
             </ul>
             <h3>Camera Controls</h3>
             <ul>
                 <li><strong>Rotate View:</strong> Left-click and drag on empty space</li>
-                <li><strong>Pan:</strong> Right-click and drag or Middle mouse button drag on empty space</li>
+                <li><strong>Pan:</strong> Right-click and drag or middle mouse drag</li>
                 <li><strong>Zoom:</strong> Scroll with mouse wheel</li>
                 <li><strong>Lock Camera:</strong> Toggle button in top-right</li>
                 <li><strong>Reset Camera:</strong> Button in top-right</li>
@@ -156,11 +169,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         // --- Constants ---
-        const DOMINO_TALL = 4;
-        const DOMINO_WIDE = 2;
-        const DOMINO_THICK = 0.5;
+        const DOMINO_TALL = 2.01642;
+        const DOMINO_WIDE = 1.01067;
+        const DOMINO_THICK = 0.258223;
         const PLANE_SIZE = 100;
         const GRID_SIZE = 100;
         const GRID_DIVISIONS = 100;
@@ -169,6 +183,9 @@
         const SELECT_COLOR = 0x555555;
         const HOVER_COLOR = 0x0055ff;
         const COLLISION_COLOR = 0xff0000;
+        const IMPULSE_MAGNITUDE = 1.5;
+        const ARROW_COLOR_DEFAULT = 0xff0000;
+        const ARROW_COLOR_HOVER = 0x0077ff;
 
         // --- Scene Setup ---
         const scene = new THREE.Scene();
@@ -200,17 +217,38 @@
         scene.add(directionalLight);
 
         // --- Physics ---
-        const world = new CANNON.World();
-        world.gravity.set(0, -9.82 * 1.5, 0);
+const world = new CANNON.World();
+world.gravity.set(0, -9.82, 0); // Changed from -9.82 * 1.5
         world.broadphase = new CANNON.SAPBroadphase(world);
-        world.solver.iterations = 15;
+        world.solver.iterations = 100;
+        world.solver.tolerance = 0.0001;
         world.allowSleep = true;
+        world.defaultContactMaterial.restitution = 0.0;
+        world.defaultContactMaterial.contactEquationStiffness = 1e6;
+        world.defaultContactMaterial.contactEquationRelaxation = 3;
+
         const groundPhysMaterial = new CANNON.Material("groundMaterial");
         const dominoPhysMaterial = new CANNON.Material("dominoMaterial");
-        const groundDominoContactMaterial = new CANNON.ContactMaterial(groundPhysMaterial, dominoPhysMaterial, { friction: 0.4, restitution: 0.1 });
+
+const groundDominoContactMaterial = new CANNON.ContactMaterial(
+    groundPhysMaterial,
+    dominoPhysMaterial,
+    { friction: 1.5, restitution: 0.0, contactEquationStiffness: 1e6, contactEquationRelaxation: 3 } // Friction from 0.9 to 1.5
+);
         world.addContactMaterial(groundDominoContactMaterial);
-        const dominoDominoContactMaterial = new CANNON.ContactMaterial(dominoPhysMaterial, dominoPhysMaterial, { friction: 0.2, restitution: 0.2 });
-        world.addContactMaterial(dominoDominoContactMaterial);
+
+const dominoDominoContactMaterial = new CANNON.ContactMaterial(
+    dominoPhysMaterial,
+    dominoPhysMaterial,
+    {
+        friction: 0.1,  // Reduced from 0.8 to allow smoother sliding
+        restitution: 0.0, // No bounciness
+        contactEquationStiffness: 1e6,
+        contactEquationRelaxation: 4,
+        contactSkinSize: 0.001
+    }
+);
+world.addContactMaterial(dominoDominoContactMaterial);
 
         // --- Ground ---
         const groundGeometry = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE);
@@ -224,6 +262,7 @@
         const groundBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
         groundBody.addShape(groundShape);
         groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+        groundBody.position.set(0, 0, 0);
         world.addBody(groundBody);
 
         // --- Grid Helper ---
@@ -248,103 +287,151 @@
         let dominoData = [];
         let selectedDominoData = null;
         let hoveredDominoData = null;
-        let isDraggingDomino = false;
+        let hoveredSimulationArrow = null;
         let isSimulating = false;
         let isAddingDomino = false;
         let previewDomino = null;
+        let previewBatchGroup = null;
+        let previewBatchCount = 0;
         let lastMousePosition = { x: 0, y: 0 };
         let translationMode = false;
         let rotationMode = false;
         let isMoving = false;
         let isRotating = false;
-        let initialRotationY = 0;
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         const contextMenu = document.getElementById('custom-context-menu');
         let isSelectingSimulationDirection = false;
         let simulationTargetData = null;
+        let dominoModel = null;
+        let rotationArrowSprite = null;
+
+        // --- Load GLB Model ---
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+            'https://vita2048.github.io/DominoSimulator/OneBlockVerticalTransformed.glb',
+            (gltf) => {
+                dominoModel = gltf.scene;
+                dominoModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.userData.isDomino = true;
+                        if (child.material) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                map: child.material.map || null,
+                                normalMap: child.material.normalMap || null,
+                                roughness: child.material.roughness || 0.7,
+                                metalness: child.material.metalness || 0.1,
+                                emissive: new THREE.Color(0x000000),
+                                emissiveIntensity: 1,
+                                color: child.material.color || 0xffffff
+                            });
+                            if (child.geometry) child.geometry.computeBoundingBox();
+                        }
+                    }
+                });
+                const box = new THREE.Box3().setFromObject(dominoModel);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+                const scaleFactor = DOMINO_TALL / size.y;
+                dominoModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                const scaledBox = new THREE.Box3().setFromObject(dominoModel);
+                dominoModel.userData.pivotToBottomY = scaledBox.min.y;
+                console.log("Scaled model size:", scaledBox.getSize(new THREE.Vector3()));
+                console.log("Pivot to bottom Y offset after scaling:", dominoModel.userData.pivotToBottomY);
+                createPreviewDomino();
+            },
+            undefined,
+            (error) => {
+                console.error("Error loading GLB model:", error);
+                showNotification("Error: Could not load domino model.", true);
+            }
+        );
 
         // --- Domino Creation ---
         function createPreviewDomino() {
-            const geometry = new THREE.BoxGeometry(DOMINO_WIDE, DOMINO_TALL, DOMINO_THICK);
-            const material = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, roughness: 0.8 });
-            previewDomino = new THREE.Mesh(geometry, material);
-            previewDomino.castShadow = true;
+            if (!dominoModel) return;
+            previewDomino = dominoModel.clone();
+            previewDomino.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = child.material.clone();
+                    child.material.transparent = true;
+                    child.material.opacity = 0.6;
+                    child.userData.isDomino = true;
+                }
+            });
+            const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
+            previewDomino.position.y = 0 - modelPivotCorrection;
             previewDomino.visible = false;
             scene.add(previewDomino);
         }
 
-        function createDomino(position, rotationY = 0) {
-            const geometry = new THREE.BoxGeometry(DOMINO_WIDE, DOMINO_TALL, DOMINO_THICK);
-            const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.1 });
-            const dominoMesh = new THREE.Mesh(geometry, baseMaterial);
-            dominoMesh.position.copy(position);
-            dominoMesh.rotation.y = rotationY;
-            dominoMesh.castShadow = true;
-            dominoMesh.receiveShadow = true;
+        function createDomino(basePosition, rotationY = 0) {
+            if (!dominoModel) {
+                showNotification("Error: Domino model not ready.", true);
+                return null;
+            }
+            const dominoMesh = dominoModel.clone();
             dominoMesh.userData.isDomino = true;
+            const modelPivotToBottomY_offset = dominoModel.userData.pivotToBottomY || 0;
+            dominoMesh.userData.modelPivotToBottomY = modelPivotToBottomY_offset;
+            dominoMesh.position.set(basePosition.x, basePosition.y - modelPivotToBottomY_offset, basePosition.z);
+            dominoMesh.rotation.y = rotationY;
+            dominoMesh.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material = child.material.clone();
+                    child.userData.isDominoPart = true;
+                }
+            });
             scene.add(dominoMesh);
-            addDominoFaces(dominoMesh);
 
             const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_WIDE / 2, DOMINO_TALL / 2, DOMINO_THICK / 2));
-            const dominoBody = new CANNON.Body({
-                mass: 0.15, position: new CANNON.Vec3().copy(position), shape: shape,
-                material: dominoPhysMaterial, linearDamping: 0.05, angularDamping: 0.05
-            });
+            const bodyCoMPosition = new CANNON.Vec3(basePosition.x, basePosition.y + DOMINO_TALL / 2, basePosition.z);
+const dominoBody = new CANNON.Body({
+    mass: 0.3,
+    position: bodyCoMPosition,
+    shape: shape,
+    material: dominoPhysMaterial,
+    linearDamping: 0.1,  // Increased from 0.05
+    angularDamping: 0.1, // Increased from 0.05
+    collisionResponse: true
+});
             dominoBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
             dominoBody.allowSleep = true;
-            dominoBody.sleepSpeedLimit = 0.1;
-            dominoBody.sleepTimeLimit = 0.8;
+            dominoBody.sleepSpeedLimit = 0.5;
+            dominoBody.sleepTimeLimit = 1.0;
+
             dominoMesh.userData.body = dominoBody;
             dominoBody.userData = { mesh: dominoMesh };
 
-            const data = { mesh: dominoMesh, body: dominoBody, initialPos: position.clone(), initialQuat: dominoBody.quaternion.clone() };
+            const data = {
+                mesh: dominoMesh,
+                body: dominoBody,
+                initialBasePosition: basePosition.clone(),
+                initialQuat: dominoBody.quaternion.clone()
+            };
             dominoData.push(data);
             dominoes.push(dominoMesh);
             world.addBody(dominoBody);
             return data;
         }
 
-        function addDominoFaces(dominoMesh) {
-            if (Array.isArray(dominoMesh.material)) return;
-            const canvas = document.createElement('canvas');
-            const size = 128; canvas.width = size; canvas.height = size * (DOMINO_TALL / DOMINO_WIDE);
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 2; ctx.strokeRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#aaaaaa'; ctx.fillRect(0, canvas.height / 2 - 1, canvas.width, 2);
-            ctx.fillStyle = 'black'; const dotRadius = canvas.width * 0.1;
-            ctx.beginPath(); ctx.arc(canvas.width * 0.5, canvas.height * 0.25, dotRadius, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(canvas.width * 0.25, canvas.height * 0.75, dotRadius, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(canvas.width * 0.75, canvas.height * 0.75, dotRadius, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(canvas.width * 0.5, canvas.height * 0.75, dotRadius, 0, Math.PI * 2); ctx.fill();
-            const texture = new THREE.CanvasTexture(canvas); texture.needsUpdate = true;
-            const faceMaterial = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.7, metalness: 0.1, color: 0xffffff });
-            const existingMaterial = dominoMesh.material;
-            dominoMesh.material = [
-                existingMaterial.clone(), existingMaterial.clone(), existingMaterial.clone(), existingMaterial.clone(),
-                faceMaterial, faceMaterial.clone()
-            ];
-            dominoMesh.material.needsUpdate = true;
-        }
-
         // --- Collision & Placement ---
         function snapToGrid(position) {
             const snappedX = Math.round(position.x / GRID_UNIT_SIZE) * GRID_UNIT_SIZE;
             const snappedZ = Math.round(position.z / GRID_UNIT_SIZE) * GRID_UNIT_SIZE;
-            return new THREE.Vector3(snappedX, position.y, snappedZ);
+            return new THREE.Vector3(snappedX, 0, snappedZ);
         }
 
         function checkDominoCollision(position, excludeData = null) {
             const snappedPos = snapToGrid(position);
             for (const data of dominoData) {
                 if (data === excludeData) continue;
-                const dx = data.mesh.position.x - snappedPos.x;
-                const dz = data.mesh.position.z - snappedPos.z;
+                const dx = data.initialBasePosition.x - snappedPos.x;
+                const dz = data.initialBasePosition.z - snappedPos.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance <= MIN_PLACEMENT_DISTANCE) {
-                    return true;
-                }
+                if (distance < MIN_PLACEMENT_DISTANCE) return true;
             }
             return false;
         }
@@ -359,77 +446,73 @@
         }
 
         // --- Highlighting ---
-        function setEmissive(dominoData, color = 0x000000) {
+        function setEmissive(dominoData, colorHex = 0x000000, intensity = 1) {
             if (!dominoData || !dominoData.mesh) return;
-            const mesh = dominoData.mesh;
-            if (Array.isArray(mesh.material)) {
-                mesh.material.forEach(m => { if (m.emissive) m.emissive.setHex(color); });
-            } else if (mesh.material.emissive) {
-                mesh.material.emissive.setHex(color);
+            dominoData.mesh.traverse((child) => {
+                if (child.isMesh && child.material && child.material.emissive) {
+                    child.material.emissive.setHex(colorHex);
+                    child.material.emissiveIntensity = intensity;
+                }
+            });
+        }
+
+        function findDominoDataFromObject(object) {
+            let current = object;
+            while (current) {
+                if (current.userData && current.userData.body) {
+                    return dominoData.find(data => data.mesh === current);
+                }
+                current = current.parent;
             }
+            return null;
         }
 
         function updateHoverEffect(event) {
-            if (isDraggingDomino || isAddingDomino || isSimulating) {
-                if (hoveredDominoData) {
-                    if (hoveredDominoData !== selectedDominoData) {
-                        setEmissive(hoveredDominoData, 0x000000);
-                    }
-                    hoveredDominoData = null;
+            if (isAddingDomino || isSimulating || translationMode || rotationMode || isSelectingSimulationDirection) {
+                if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
+                    setEmissive(hoveredDominoData, 0x000000);
                 }
+                hoveredDominoData = null;
                 return;
             }
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(dominoes);
-            let currentlyHovered = null;
-            if (intersects.length > 0 && intersects[0].object.userData.isDomino) {
-                currentlyHovered = dominoData.find(data => data.mesh === intersects[0].object);
+            const intersects = raycaster.intersectObjects(dominoes, true);
+            let currentlyHoveredData = null;
+            if (intersects.length > 0) {
+                currentlyHoveredData = findDominoDataFromObject(intersects[0].object);
             }
-            if (currentlyHovered !== hoveredDominoData) {
-                if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
-                    setEmissive(hoveredDominoData, 0x000000);
-                }
-                if (currentlyHovered && currentlyHovered !== selectedDominoData) {
-                    setEmissive(currentlyHovered, HOVER_COLOR);
-                }
-                hoveredDominoData = currentlyHovered;
+            if (hoveredDominoData && hoveredDominoData !== currentlyHoveredData && hoveredDominoData !== selectedDominoData) {
+                setEmissive(hoveredDominoData, 0x000000);
+            }
+            if (currentlyHoveredData && currentlyHoveredData !== selectedDominoData) {
+                setEmissive(currentlyHoveredData, HOVER_COLOR, 1.5);
+                hoveredDominoData = currentlyHoveredData;
+            } else {
+                hoveredDominoData = null;
             }
         }
 
         // --- Selection & Manipulation ---
         function selectDomino(dataToSelect) {
-            if (selectedDominoData) {
-                setEmissive(selectedDominoData, 0x000000);
-            }
-            if (hoveredDominoData === dataToSelect) {
-                setEmissive(hoveredDominoData, 0x000000);
-                hoveredDominoData = null;
-            }
+            if (selectedDominoData) setEmissive(selectedDominoData, 0x000000);
+            if (isSelectingSimulationDirection && selectedDominoData !== dataToSelect) clearSimulationArrows();
             selectedDominoData = dataToSelect;
-            if (!dataToSelect) {
-                scene.children.filter(child => child.isSimulationArrow || child.isGlowSprite).forEach(child => {
-                    scene.remove(child);
-                    if (child.material.map) child.material.map.dispose();
-                    child.material.dispose();
-                    child.geometry.dispose();
-                });
-                isSelectingSimulationDirection = false;
-                simulationTargetData = null;
-            }
             if (selectedDominoData) {
-                setEmissive(selectedDominoData, SELECT_COLOR);
+                setEmissive(selectedDominoData, SELECT_COLOR, 1.5);
+                if (hoveredDominoData === selectedDominoData) hoveredDominoData = null;
             } else {
-                translationMode = false;
-                rotationMode = false;
-                isMoving = false;
-                isRotating = false;
-                document.body.style.cursor = 'default';
-                if (hoveredDominoData) {
-                    setEmissive(hoveredDominoData, HOVER_COLOR);
+                if (translationMode || rotationMode) {
+                    translationMode = false;
+                    rotationMode = false;
+                    isMoving = false;
+                    isRotating = false;
+                    document.body.style.cursor = 'default';
+                    controls.enabled = true;
                 }
+                if (hoveredDominoData) setEmissive(hoveredDominoData, HOVER_COLOR, 1.5);
             }
             hideContextMenu();
         }
@@ -439,142 +522,88 @@
             canvas.width = 128;
             canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = 6;
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.arc(64, 64, 40, Math.PI * 0.75, Math.PI * 1.75, false);
             ctx.stroke();
-            drawArrowhead(ctx, 64, 64, 40, Math.PI * 1.75, false);
             ctx.beginPath();
             ctx.arc(64, 64, 40, Math.PI * 1.25, Math.PI * 0.25, true);
             ctx.stroke();
-            drawArrowhead(ctx, 64, 64, 40, Math.PI * 0.25, true);
             const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            const material = new THREE.SpriteMaterial({ map: texture, color: 0xffffff, transparent: true });
+            const material = new THREE.SpriteMaterial({ map: texture, color: 0xffffff, transparent: true, depthTest: false, depthWrite: false });
             const sprite = new THREE.Sprite(material);
             sprite.scale.set(2, 2, 1);
             sprite.visible = false;
-            sprite.isRotationArrow = true;
+            sprite.userData.isRotationArrow = true;
+            sprite.renderOrder = 1;
             return sprite;
         }
 
-        function drawArrowhead(ctx, cx, cy, radius, theta, isCounterclockwise) {
-            const tangentX = isCounterclockwise ? Math.sin(theta) : -Math.sin(theta);
-            const tangentY = isCounterclockwise ? -Math.cos(theta) : Math.cos(theta);
-            const arrowSize = 10;
-            const endPointX = cx + radius * Math.cos(theta);
-            const endPointY = cy + radius * Math.sin(theta);
-            const tipX = endPointX + arrowSize * tangentX;
-            const tipY = endPointY + arrowSize * tangentY;
-            const base1X = endPointX - arrowSize * 0.5 * tangentX + arrowSize * 0.866 * (isCounterclockwise ? -tangentY : tangentY);
-            const base1Y = endPointY - arrowSize * 0.5 * tangentY + arrowSize * 0.866 * (isCounterclockwise ? tangentX : -tangentX);
-            const base2X = endPointX - arrowSize * 0.5 * tangentX - arrowSize * 0.866 * (isCounterclockwise ? -tangentY : tangentY);
-            const base2Y = endPointY - arrowSize * 0.5 * tangentY - arrowSize * 0.866 * (isCounterclockwise ? tangentX : -tangentX);
-            ctx.beginPath();
-            ctx.moveTo(tipX, tipY);
-            ctx.lineTo(base1X, base1Y);
-            ctx.lineTo(base2X, base2Y);
-            ctx.closePath();
-            ctx.fillStyle = '#ff0000';
-            ctx.fill();
-        }
-
         function animateRotation(data) {
-            if (!data) return;
-            const mesh = data.mesh;
-            const body = data.body;
-            const q = data.initialQuat;
-            const siny_cosp = 2 * (q.w * q.y + q.x * q.z);
-            const cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
-            const originalRotationY = Math.atan2(siny_cosp, cosy_cosp);
-            const maxAngle = Math.PI / 4;
+            if (!data || !data.mesh || !data.body) return;
+            if (!rotationArrowSprite) rotationArrowSprite = createRotationArrows();
+            const visualYPosition = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0) + DOMINO_TALL * 0.75;
+            rotationArrowSprite.position.set(data.mesh.position.x, visualYPosition, data.mesh.position.z);
+            rotationArrowSprite.visible = true;
+            scene.add(rotationArrowSprite);
+
+            const initialBodyQuaternion = data.body.quaternion.clone();
             let totalRotationOffset = 0;
-            const arrowSprite = createRotationArrows();
-            arrowSprite.position.set(mesh.position.x, mesh.position.y + DOMINO_TALL / 2 + 1, mesh.position.z);
-            arrowSprite.rotation.x = -Math.PI / 2;
-            arrowSprite.visible = true;
-            scene.add(arrowSprite);
+
             function updateRotation(event) {
-                if (!rotationMode || !data.mesh || data !== selectedDominoData) {
+                if (!rotationMode || !selectedDominoData || selectedDominoData !== data) {
                     document.removeEventListener('mousemove', updateRotation);
-                    scene.remove(arrowSprite);
-                    if (arrowSprite.material.map) arrowSprite.material.map.dispose();
-                    arrowSprite.material.dispose();
-                    arrowSprite.geometry.dispose();
+                    if (rotationArrowSprite) {
+                        scene.remove(rotationArrowSprite);
+                        rotationArrowSprite.visible = false;
+                    }
                     return;
                 }
                 const deltaX = event.clientX - lastMousePosition.x;
-                const rotationSpeed = 0.05;
+                const rotationSpeed = 0.01;
                 totalRotationOffset += deltaX * rotationSpeed;
-                totalRotationOffset = Math.max(-maxAngle, Math.min(maxAngle, totalRotationOffset));
-                const newRotationY = originalRotationY + totalRotationOffset;
-                mesh.rotation.y = newRotationY;
-                body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), newRotationY);
-                arrowSprite.position.set(mesh.position.x, mesh.position.y + DOMINO_TALL / 2 + 1, mesh.position.z);
+                const rotationQuaternion = new CANNON.Quaternion();
+                rotationQuaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), totalRotationOffset);
+                data.body.quaternion.copy(initialBodyQuaternion).mult(rotationQuaternion, data.body.quaternion);
+                const currentBaseY = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0);
+                rotationArrowSprite.position.set(data.mesh.position.x, currentBaseY + DOMINO_TALL * 0.75, data.mesh.position.z);
                 lastMousePosition = { x: event.clientX, y: event.clientY };
             }
-            document.addEventListener('mousemove', updateRotation);
+            document.addEventListener('mousemove', updateRotation, false);
         }
 
-        function createArrowSprite(direction) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 64;
-            canvas.height = 32;
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#ff0000';
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 6;
-            if (direction === 'left') {
-                ctx.beginPath();
-                ctx.moveTo(60, 16);
-                ctx.lineTo(20, 4);
-                ctx.lineTo(20, 12);
-                ctx.lineTo(4, 12);
-                ctx.lineTo(4, 20);
-                ctx.lineTo(20, 20);
-                ctx.lineTo(20, 28);
-                ctx.closePath();
-            } else {
-                ctx.beginPath();
-                ctx.moveTo(4, 16);
-                ctx.lineTo(44, 4);
-                ctx.lineTo(44, 12);
-                ctx.lineTo(60, 12);
-                ctx.lineTo(60, 20);
-                ctx.lineTo(44, 20);
-                ctx.lineTo(44, 28);
-                ctx.closePath();
+        function createSimulationArrowHelper(origin, directionVec, color, userDataDirection) {
+            const length = 1.0;
+            const headLength = 0.3;
+            const headWidth = 0.2;
+            const arrowHelper = new THREE.ArrowHelper(directionVec.clone().normalize(), origin, length, color, headLength, headWidth);
+            arrowHelper.userData.isSimulationArrow = true;
+            arrowHelper.userData.direction = userDataDirection;
+            arrowHelper.userData.originalColor = color;
+            arrowHelper.userData.isPulsing = false;
+            arrowHelper.userData.pulseTime = 0;
+            arrowHelper.line.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
+            arrowHelper.cone.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
+            return arrowHelper;
+        }
+
+        function clearSimulationArrows() {
+            const arrowsToRemove = scene.children.filter(child => child.userData && child.userData.isSimulationArrow);
+            arrowsToRemove.forEach(arrow => {
+                if (hoveredSimulationArrow === arrow) {
+                    if (arrow.cone) arrow.cone.scale.set(1, 1, 1);
+                    hoveredSimulationArrow = null;
+                }
+                scene.remove(arrow);
+            });
+            if (isSelectingSimulationDirection) {
+                isSelectingSimulationDirection = false;
+                simulationTargetData = null;
+                document.body.style.cursor = 'default';
+                controls.enabled = true;
             }
-            ctx.fill();
-            ctx.stroke();
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            const material = new THREE.SpriteMaterial({ map: texture, color: 0xffffff, transparent: true });
-            const arrowSprite = new THREE.Sprite(material);
-            arrowSprite.scale.set(1, 0.5, 1);
-            arrowSprite.visible = false;
-            arrowSprite.userData = { direction: direction === 'left' ? 'front' : 'back' };
-            arrowSprite.isSimulationArrow = true;
-            arrowSprite.renderOrder = 0;
-            const glowCanvas = document.createElement('canvas');
-            glowCanvas.width = 64;
-            glowCanvas.height = 32;
-            const glowCtx = glowCanvas.getContext('2d');
-            glowCtx.fillStyle = 'rgba(0, 0, 255, 0.3)';
-            glowCtx.fillRect(0, 0, 64, 32);
-            const glowTexture = new THREE.CanvasTexture(glowCanvas);
-            glowTexture.needsUpdate = true;
-            const glowMaterial = new THREE.SpriteMaterial({ map: glowTexture, color: 0xffffff, transparent: true });
-            const glowSprite = new THREE.Sprite(glowMaterial);
-            glowSprite.scale.set(1.2, 0.6, 1);
-            glowSprite.visible = false;
-            glowSprite.isGlowSprite = true;
-            glowSprite.renderOrder = 1;
-            return { arrow: arrowSprite, glow: glowSprite };
         }
 
         // --- Context Menu Logic ---
@@ -588,65 +617,45 @@
             document.getElementById('context-move').onclick = () => {
                 translationMode = true;
                 rotationMode = false;
-                isRotating = false;
                 isMoving = true;
+                isRotating = false;
                 lastMousePosition = { x: event.clientX, y: event.clientY };
-                showNotification("Move: Domino follows mouse. Click to fix position.");
-                hideContextMenu();
+                showNotification("Move: Domino follows mouse. Left-click to fix.");
                 document.body.style.cursor = 'move';
                 controls.enabled = false;
+                hideContextMenu();
             };
 
             document.getElementById('context-rotate').onclick = () => {
                 rotationMode = true;
                 translationMode = false;
-                isMoving = false;
                 isRotating = true;
+                isMoving = false;
                 lastMousePosition = { x: event.clientX, y: event.clientY };
-                showNotification("Rotate: Move mouse horizontally to rotate (±45°). Click to fix rotation.");
-                hideContextMenu();
+                showNotification("Rotate: Drag mouse horizontally. Left-click to fix.");
                 document.body.style.cursor = 'ew-resize';
                 controls.enabled = false;
                 animateRotation(targetData);
+                hideContextMenu();
             };
 
             document.getElementById('context-start-simulation').onclick = () => {
-                if (!targetData) return;
+                if (!targetData || !targetData.body) return;
                 hideContextMenu();
-                scene.children.filter(child => child.isSimulationArrow || child.isGlowSprite).forEach(child => {
-                    scene.remove(child);
-                    if (child.material.map) child.material.map.dispose();
-                    child.material.dispose();
-                    child.geometry.dispose();
-                });
-                const frontArrowObj = createArrowSprite('left'); // Using 'left' texture for front
-                const backArrowObj = createArrowSprite('right'); // Using 'right' texture for back
-                const frontArrow = frontArrowObj.arrow;
-                const backArrow = backArrowObj.arrow;
-                const frontGlow = frontArrowObj.glow;
-                const backGlow = backArrowObj.glow;
-                const dominoPos = targetData.mesh.position;
-                const dominoQuat = targetData.mesh.quaternion;
-                const gap = 0.2;
-                const arrowWidth = 1;
-                const arrowOffset = DOMINO_THICK / 2 + gap + arrowWidth / 2; // 0.25 + 0.2 + 0.5 = 0.95
-                const localFront = new THREE.Vector3(0, 0, arrowOffset);
-                const localBack = new THREE.Vector3(0, 0, -arrowOffset);
-                const worldFront = localFront.clone().applyQuaternion(dominoQuat).add(dominoPos);
-                const worldBack = localBack.clone().applyQuaternion(dominoQuat).add(dominoPos);
-                frontArrow.position.copy(worldFront);
-                backArrow.position.copy(worldBack);
-                frontGlow.position.copy(worldFront);
-                backGlow.position.copy(worldBack);
-                scene.add(frontArrow);
-                scene.add(backArrow);
-                scene.add(frontGlow);
-                scene.add(backGlow);
-                frontArrow.visible = true;
-                backArrow.visible = true;
-                frontArrow.userData.glowSprite = frontGlow;
-                backArrow.userData.glowSprite = backGlow;
-                showNotification("Click an arrow to start simulation (front/back).");
+                clearSimulationArrows();
+                const bodyPos = targetData.body.position;
+                const bodyQuat = targetData.body.quaternion;
+                const localX = new THREE.Vector3(1, 0, 0);
+                const worldNormalPositiveX = new THREE.Vector3().copy(localX).applyQuaternion(new THREE.Quaternion(bodyQuat.x, bodyQuat.y, bodyQuat.z, bodyQuat.w));
+                const worldNormalNegativeX = worldNormalPositiveX.clone().negate();
+                const faceOffsetDistance = DOMINO_WIDE / 2;
+                const positiveXArrowOrigin = new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z).add(worldNormalPositiveX.clone().multiplyScalar(faceOffsetDistance));
+                const negativeXArrowOrigin = new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z).add(worldNormalNegativeX.clone().multiplyScalar(faceOffsetDistance));
+                const positiveXArrow = createSimulationArrowHelper(positiveXArrowOrigin, worldNormalPositiveX, ARROW_COLOR_DEFAULT, 'positiveX');
+                scene.add(positiveXArrow);
+                const negativeXArrow = createSimulationArrowHelper(negativeXArrowOrigin, worldNormalNegativeX, ARROW_COLOR_DEFAULT, 'negativeX');
+                scene.add(negativeXArrow);
+                showNotification("Click a red arrow to apply impulse.");
                 isSelectingSimulationDirection = true;
                 simulationTargetData = targetData;
                 controls.enabled = false;
@@ -660,12 +669,23 @@
 
         function deleteSelectedDomino() {
             if (!selectedDominoData) return;
-            const dataToDelete = selectedDominoData; selectDomino(null);
-            scene.remove(dataToDelete.mesh); if (world.bodies.includes(dataToDelete.body)) world.removeBody(dataToDelete.body);
-            const meshIndex = dominoes.indexOf(dataToDelete.mesh); if (meshIndex > -1) dominoes.splice(meshIndex, 1);
-            const dataIndex = dominoData.indexOf(dataToDelete); if (dataIndex > -1) dominoData.splice(dataIndex, 1);
-            if (dataToDelete.mesh.geometry) dataToDelete.mesh.geometry.dispose();
-            if (dataToDelete.mesh.material) { if (Array.isArray(dataToDelete.mesh.material)) { dataToDelete.mesh.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } else { if (dataToDelete.mesh.material.map) dataToDelete.mesh.material.map.dispose(); dataToDelete.mesh.material.dispose(); } }
+            const dataToDelete = selectedDominoData;
+            selectDomino(null);
+            scene.remove(dataToDelete.mesh);
+            if (world.bodies.includes(dataToDelete.body)) world.removeBody(dataToDelete.body);
+            const meshIndex = dominoes.indexOf(dataToDelete.mesh);
+            if (meshIndex > -1) dominoes.splice(meshIndex, 1);
+            const dataIndex = dominoData.indexOf(dataToDelete);
+            if (dataIndex > -1) dominoData.splice(dataIndex, 1);
+            dataToDelete.mesh.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                }
+            });
             showNotification('Domino Deleted');
         }
 
@@ -673,94 +693,177 @@
             contextMenu.style.display = 'none';
             document.getElementById('context-move').onclick = null;
             document.getElementById('context-rotate').onclick = null;
+            document.getElementById('context-start-simulation').onclick = null;
             document.getElementById('context-delete').onclick = null;
-            if (!translationMode && !rotationMode && !isMoving && !isRotating) {
-                document.body.style.cursor = 'default';
-            }
         }
 
         // --- Simulation Control ---
-        function startSimulation() {
-            if (dominoData.length === 0) return;
-            isSimulating = true;
-            const firstDomino = dominoData[0];
-            const forceMagnitude = 0.5;
-            const forcePoint = new CANNON.Vec3(firstDomino.body.position.x, firstDomino.body.position.y + DOMINO_TALL / 2, firstDomino.body.position.z);
-            const force = new CANNON.Vec3(forceMagnitude, 0, 0);
-            firstDomino.body.applyImpulse(force, forcePoint);
-            showNotification("Simulation started!");
-        }
+function startSimulation() {
+    if (dominoData.length === 0) {
+        showNotification("Add some dominoes first!");
+        return;
+    }
+    if (isSimulating) return;
+    clearSimulationArrows();
+    isSimulating = true;
+    world.allowSleep = false;
+    const firstDomino = dominoData[0];
+    if (firstDomino && firstDomino.body) {
+        firstDomino.body.wakeUp();
+        const localImpulse = new CANNON.Vec3(IMPULSE_MAGNITUDE, 0, 0); // Uses global IMPULSE_MAGNITUDE = 1.0
+        const appPointLocal = new CANNON.Vec3(-DOMINO_WIDE / 2, DOMINO_TALL * 0.75, 0);
+        const worldImpulse = firstDomino.body.quaternion.vmult(localImpulse);
+        const worldApplicationPoint = firstDomino.body.quaternion.vmult(appPointLocal);
+        worldApplicationPoint.vadd(firstDomino.body.position, worldApplicationPoint);
+        firstDomino.body.applyImpulse(worldImpulse, worldApplicationPoint);
+    }
+    showNotification("Simulation started!");
+}
 
         function resetSimulation() {
             isSimulating = false;
-            controls.enabled = true;
             world.allowSleep = true;
+            clearSimulationArrows();
             hideContextMenu();
-
-            // Remove all domino physics bodies from the world
-            dominoData.forEach(data => {
-                if (world.bodies.includes(data.body)) {
-                    world.removeBody(data.body);
+            if (translationMode || rotationMode || isAddingDomino) {
+                translationMode = false;
+                rotationMode = false;
+                isAddingDomino = false;
+                isMoving = false;
+                isRotating = false;
+                document.body.style.cursor = 'default';
+                if (previewDomino) previewDomino.visible = false;
+                if (previewBatchGroup) {
+                    scene.remove(previewBatchGroup);
+                    previewBatchGroup = null;
+                    previewBatchCount = 0;
                 }
-            });
-
-            // Recreate domino physics bodies with initial positions and quaternions
+            }
+            controls.enabled = true;
             dominoData.forEach(data => {
-                const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_WIDE / 2, DOMINO_TALL / 2, DOMINO_THICK / 2));
-                const dominoBody = new CANNON.Body({
-                    mass: 0.15,
-                    position: data.initialPos.clone(),
-                    shape: shape,
-                    material: dominoPhysMaterial,
-                    linearDamping: 0.05,
-                    angularDamping: 0.05
-                });
-                dominoBody.quaternion.copy(data.initialQuat);
-                dominoBody.allowSleep = true;
-                dominoBody.sleepSpeedLimit = 0.1;
-                dominoBody.sleepTimeLimit = 0.8;
-                dominoBody.velocity.set(0, 0, 0);
-                dominoBody.angularVelocity.set(0, 0, 0);
-                data.body = dominoBody;
-                data.mesh.userData.body = dominoBody; // Update mesh reference
-                dominoBody.userData = { mesh: data.mesh }; // Update body reference
-                world.addBody(dominoBody);
-            });
-
-            // Reset mesh positions and quaternions
-            dominoData.forEach(data => {
-                data.mesh.position.copy(data.initialPos);
+                const basePos = data.initialBasePosition;
+                const modelPivotOffsetY = data.mesh.userData.modelPivotToBottomY || 0;
+                data.body.position.set(basePos.x, basePos.y + DOMINO_TALL / 2, basePos.z);
+                data.body.quaternion.copy(data.initialQuat);
+                data.body.velocity.set(0, 0, 0);
+                data.body.angularVelocity.set(0, 0, 0);
+                data.body.sleep();
+                data.mesh.position.set(basePos.x, basePos.y - modelPivotOffsetY, basePos.z);
                 data.mesh.quaternion.copy(data.initialQuat);
                 setEmissive(data, 0x000000);
             });
-
             selectDomino(null);
             hoveredDominoData = null;
+            if (hoveredSimulationArrow) {
+                setArrowColor(hoveredSimulationArrow, hoveredSimulationArrow.userData.originalColor);
+                if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1);
+                hoveredSimulationArrow.userData.isPulsing = false;
+                hoveredSimulationArrow = null;
+            }
             showNotification('Simulation Reset');
         }
 
         function clearCanvas() {
             resetSimulation();
             dominoData.forEach(data => {
-                scene.remove(data.mesh); if (world.bodies.includes(data.body)) world.removeBody(data.body);
-                if (data.mesh.geometry) data.mesh.geometry.dispose();
-                if (data.mesh.material) { if (Array.isArray(data.mesh.material)) { data.mesh.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } else { if (data.mesh.material.map) data.mesh.material.map.dispose(); data.mesh.material.dispose(); } }
+                scene.remove(data.mesh);
+                if (world.bodies.includes(data.body)) world.removeBody(data.body);
+                data.mesh.traverse((child) => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                    }
+                });
             });
-            dominoes = []; dominoData = []; selectedDominoData = null; hoveredDominoData = null;
+            dominoes = [];
+            dominoData = [];
             showNotification('Canvas Cleared');
         }
 
         // --- UI Helpers ---
-        function showNotification(message) {
+        function showNotification(message, isError = false) {
             const notification = document.getElementById('notification');
             notification.textContent = message;
+            notification.style.backgroundColor = isError ? 'rgba(200, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.7)';
             notification.style.opacity = '1';
-            setTimeout(() => { notification.style.opacity = '0'; }, 2000);
+            setTimeout(() => { notification.style.opacity = '0'; }, isError ? 3000 : 2000);
         }
 
         function toggleOrbitControls() {
             controls.enabled = !controls.enabled;
             document.getElementById('toggle-orbit').textContent = controls.enabled ? 'Lock Camera' : 'Unlock Camera';
+            if (controls.enabled && (translationMode || rotationMode || isAddingDomino || isSelectingSimulationDirection)) {
+                translationMode = false;
+                rotationMode = false;
+                isAddingDomino = false;
+                isSelectingSimulationDirection = false;
+                isMoving = false;
+                isRotating = false;
+                document.body.style.cursor = 'default';
+                if (previewDomino) previewDomino.visible = false;
+                if (previewBatchGroup) {
+                    scene.remove(previewBatchGroup);
+                    previewBatchGroup = null;
+                    previewBatchCount = 0;
+                }
+                clearSimulationArrows();
+            }
+        }
+
+        function onStartDragDominoTemplate(event) {
+            if (isSimulating || !dominoModel) return;
+            isAddingDomino = true;
+            if (!previewDomino) createPreviewDomino();
+            if (previewDomino) previewDomino.visible = true;
+            controls.enabled = false;
+            document.body.style.cursor = 'grabbing';
+            hideContextMenu();
+        }
+
+        function onAddBatch() {
+            if (isSimulating || !dominoModel) return;
+            const numDominos = prompt("Enter number of dominos (2-20):", "5");
+            if (numDominos === null) return;
+            const n = parseInt(numDominos);
+            if (isNaN(n) || n < 2 || n > 20) {
+                showNotification("Invalid number. Please enter 2-20.", true);
+                return;
+            }
+            createPreviewBatch(n);
+            isAddingDomino = true;
+            controls.enabled = false;
+            document.body.style.cursor = 'grabbing';
+            hideContextMenu();
+        }
+
+        function createPreviewBatch(n) {
+            if (previewBatchGroup) {
+                scene.remove(previewBatchGroup);
+                previewBatchGroup = null;
+            }
+            previewBatchGroup = new THREE.Group();
+            const spacing = 1.0; // Minimal spacing matching MIN_PLACEMENT_DISTANCE
+            for (let i = 0; i < n; i++) {
+                const previewDomino = dominoModel.clone();
+                previewDomino.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.material.opacity = 0.6;
+                        child.userData.isDomino = true;
+                    }
+                });
+                const zPos = (i - (n - 1) / 2) * spacing; // Center the batch
+                previewDomino.position.set(0, 0, zPos);
+                previewDomino.rotation.y = Math.PI / 2; // Rotate 90 degrees to make faces perpendicular to z-axis
+                previewBatchGroup.add(previewDomino);
+            }
+            previewBatchGroup.position.y = -dominoModel.userData.pivotToBottomY;
+            scene.add(previewBatchGroup);
+            previewBatchCount = n;
         }
 
         // --- Event Listeners Setup ---
@@ -770,105 +873,103 @@
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 hideContextMenu();
-            });
+            }, false);
+
             const canvasContainer = document.getElementById('canvas-container');
             canvasContainer.addEventListener('mousedown', onMouseDown, false);
             canvasContainer.addEventListener('mousemove', onMouseMove, false);
             canvasContainer.addEventListener('mouseup', onMouseUp, false);
             canvasContainer.addEventListener('contextmenu', onContextMenu, false);
+
             window.addEventListener('keydown', onKeyDown, false);
             window.addEventListener('mousedown', (event) => {
-                if (contextMenu.style.display === 'block' && !contextMenu.contains(event.target)) {
-                    hideContextMenu();
-                }
+                if (contextMenu.style.display === 'block' && !contextMenu.contains(event.target)) hideContextMenu();
             }, true);
+
             document.getElementById('domino-template').addEventListener('mousedown', onStartDragDominoTemplate);
-            document.getElementById('start-button').addEventListener('click', startSimulation);
+            document.getElementById('add-batch-button').addEventListener('click', onAddBatch);
             document.getElementById('reset-button').addEventListener('click', resetSimulation);
             document.getElementById('clear-button').addEventListener('click', clearCanvas);
             document.getElementById('toggle-grid').addEventListener('change', (event) => { grid.visible = event.target.checked; });
             document.getElementById('toggle-orbit').addEventListener('click', toggleOrbitControls);
-            document.getElementById('reset-camera').addEventListener('click', () => { controls.reset(); camera.position.set(0, 20, 30); camera.lookAt(0, 0, 0); controls.update(); });
+            document.getElementById('reset-camera').addEventListener('click', () => {
+                controls.reset();
+                camera.position.set(0, 20, 30);
+                camera.lookAt(0, 0, 0);
+                controls.update();
+                controls.enabled = true;
+                document.getElementById('toggle-orbit').textContent = 'Lock Camera';
+            });
             document.getElementById('help-button').addEventListener('click', () => { document.getElementById('modal-overlay').style.display = 'flex'; });
             document.getElementById('close-modal').addEventListener('click', () => { document.getElementById('modal-overlay').style.display = 'none'; });
-            document.getElementById('modal-overlay').addEventListener('click', (event) => { if (event.target === document.getElementById('modal-overlay')) document.getElementById('modal-overlay').style.display = 'none'; });
+            document.getElementById('modal-overlay').addEventListener('click', (event) => {
+                if (event.target === document.getElementById('modal-overlay')) document.getElementById('modal-overlay').style.display = 'none';
+            });
         }
 
-        // --- Mouse Interaction Logic ---
-        function onStartDragDominoTemplate(event) {
-            if (isSimulating) return;
-            isAddingDomino = true; if (!previewDomino) createPreviewDomino();
-            previewDomino.visible = true; controls.enabled = false; document.body.style.cursor = 'grabbing';
-            hideContextMenu(); updateHoverEffect(event);
-            const worldPos = mouseToWorld(event);
-            if (worldPos) {
-                const snappedPos = snapToGrid(worldPos); previewDomino.position.set(snappedPos.x, DOMINO_TALL / 2, snappedPos.z);
-                const collision = checkDominoCollision(previewDomino.position);
-                previewDomino.material.color.set(collision ? 0xff6666 : 0xffffff); previewDomino.material.opacity = collision ? 0.4 : 0.6;
+        function setArrowColor(arrow, color) {
+            if (arrow && arrow.line && arrow.cone) {
+                arrow.line.material.color.setHex(color);
+                arrow.cone.material.color.setHex(color);
             }
         }
 
         function onMouseDown(event) {
             if (event.button !== 0) return;
-            if (isSimulating || isAddingDomino) return;
-            hideContextMenu();
-            const worldPos = mouseToWorld(event);
-            if (!worldPos) return;
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects([...dominoes, ...scene.children.filter(child => child.isSimulationArrow)]);
-            if (isSelectingSimulationDirection && intersects.length > 0) {
-                const clickedObject = intersects[0].object;
-                if (clickedObject.isSimulationArrow) {
-                    const direction = clickedObject.userData.direction;
-                    scene.children.filter(child => child.isSimulationArrow || child.isGlowSprite).forEach(child => {
-                        scene.remove(child);
-                        if (child.material.map) child.material.map.dispose();
-                        child.material.dispose();
-                        child.geometry.dispose();
-                    });
-                    if (simulationTargetData) {
-                        const forceMagnitude = 0.5;
-                        let localForce;
-                        if (direction === 'front') {
-                            localForce = new CANNON.Vec3(0, 0, forceMagnitude);
-                        } else if (direction === 'back') {
-                            localForce = new CANNON.Vec3(0, 0, -forceMagnitude);
-                        }
-                        const worldForce = simulationTargetData.body.quaternion.vmult(localForce);
-                        const forcePoint = new CANNON.Vec3(
-                            simulationTargetData.body.position.x,
-                            simulationTargetData.body.position.y + DOMINO_TALL / 2,
-                            simulationTargetData.body.position.z
+
+            if (isSelectingSimulationDirection && simulationTargetData) {
+                const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
+                const intersectsArrows = raycaster.intersectObjects(simulationArrows, true);
+                if (intersectsArrows.length > 0) {
+                    let clickedArrowPart = intersectsArrows[0].object;
+                    let actualArrow = clickedArrowPart.userData.parentArrow || (clickedArrowPart.userData.isSimulationArrow ? clickedArrowPart : null);
+                    if (actualArrow && actualArrow.userData.direction) {
+                        const direction = actualArrow.userData.direction;
+                        simulationTargetData.body.wakeUp();
+                        let localImpulse = new CANNON.Vec3();
+                        if (direction === 'positiveX') localImpulse.set(IMPULSE_MAGNITUDE, 0, 0);
+                        else localImpulse.set(-IMPULSE_MAGNITUDE, 0, 0);
+                        const appPointLocal = new CANNON.Vec3(
+                            direction === 'positiveX' ? -DOMINO_WIDE / 2 : DOMINO_WIDE / 2,
+                            DOMINO_TALL * 0.75,
+                            0
                         );
-                        simulationTargetData.body.applyImpulse(worldForce, forcePoint);
-                        startSimulation();
-                        showNotification(`Simulation started: domino falling ${direction}.`);
+                        const worldImpulse = simulationTargetData.body.quaternion.vmult(localImpulse);
+                        const worldApplicationPoint = simulationTargetData.body.quaternion.vmult(appPointLocal);
+                        worldApplicationPoint.vadd(simulationTargetData.body.position, worldApplicationPoint);
+                        simulationTargetData.body.applyImpulse(worldImpulse, worldApplicationPoint);
+                        isSimulating = true;
+                        world.allowSleep = false;
+                        showNotification(`Simulation started by arrow: pushing ${direction}`);
+                        clearSimulationArrows();
+                        return;
                     }
-                    isSelectingSimulationDirection = false;
-                    simulationTargetData = null;
-                    document.body.style.cursor = 'default';
-                    controls.enabled = true;
-                    return;
+                } else {
+                    clearSimulationArrows();
+                    showNotification("Simulation direction selection canceled.");
                 }
+                return;
             }
+
             if (isMoving && translationMode) {
                 isMoving = false;
                 translationMode = false;
                 document.body.style.cursor = 'default';
                 controls.enabled = true;
                 if (selectedDominoData) {
-                    const collision = checkDominoCollision(selectedDominoData.mesh.position, selectedDominoData);
-                    setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR);
-                    if (collision) {
-                        showNotification("Warning: Domino overlaps another!");
-                    } else {
-                        showNotification("Position fixed.");
-                    }
+                    const modelPivotOffsetY = selectedDominoData.mesh.userData.modelPivotToBottomY || 0;
+                    const currentBaseY = selectedDominoData.mesh.position.y + modelPivotOffsetY;
+                    const collision = checkDominoCollision(new THREE.Vector3(selectedDominoData.mesh.position.x, currentBaseY, selectedDominoData.mesh.position.z), selectedDominoData);
+                    setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR, 1.5);
+                    if (collision) showNotification("Warning: Domino placement overlaps!", true);
+                    else showNotification("Position fixed.");
+                    selectedDominoData.initialBasePosition.set(selectedDominoData.mesh.position.x, currentBaseY, selectedDominoData.mesh.position.z);
+                    selectedDominoData.initialQuat.copy(selectedDominoData.body.quaternion);
                 }
-                updateHoverEffect(event);
                 return;
             }
             if (isRotating && rotationMode) {
@@ -878,111 +979,137 @@
                 controls.enabled = true;
                 if (selectedDominoData) {
                     selectedDominoData.initialQuat.copy(selectedDominoData.body.quaternion);
-                    setEmissive(selectedDominoData, SELECT_COLOR);
-                    const arrowSprite = scene.getObjectByProperty('isRotationArrow', true);
-                    if (arrowSprite) {
-                        scene.remove(arrowSprite);
-                        if (arrowSprite.material.map) arrowSprite.material.map.dispose();
-                        arrowSprite.material.dispose();
-                        arrowSprite.geometry.dispose();
-                    }
+                    setEmissive(selectedDominoData, SELECT_COLOR, 1.5);
                     showNotification("Rotation fixed.");
                 }
-                updateHoverEffect(event);
+                if (rotationArrowSprite) {
+                    scene.remove(rotationArrowSprite);
+                    rotationArrowSprite.visible = false;
+                }
                 return;
             }
-            if (intersects.length > 0 && intersects[0].object.userData.isDomino) {
-                const clickedData = dominoData.find(data => data.mesh === intersects[0].object);
-                if (clickedData) {
-                    selectDomino(clickedData);
-                }
-            } else {
-                selectDomino(null);
-            }
-        }
 
-        function animateGlow(glowSprite) {
-            let scale = 1;
-            const maxScale = 1.2;
-            const minScale = 1.0;
-            let speed = 0.02;
-            function pulse() {
-                if (!glowSprite.visible) return;
-                scale += speed;
-                if (scale > maxScale || scale < minScale) {
-                    speed = -speed;
-                }
-                glowSprite.scale.set(1.2 * scale, 0.6 * scale, 1);
-                requestAnimationFrame(pulse);
+            const intersectsDominoes = raycaster.intersectObjects(dominoes, true);
+            if (intersectsDominoes.length > 0 && !isSimulating) {
+                const clickedDominoData = findDominoDataFromObject(intersectsDominoes[0].object);
+                if (clickedDominoData) selectDomino(clickedDominoData);
+            } else {
+                if (!isSelectingSimulationDirection) selectDomino(null);
             }
-            pulse();
         }
 
         function onMouseMove(event) {
-            if (isSimulating) return;
-            updateHoverEffect(event);
+            if (!dominoModel) return;
+            const currentMouse = new THREE.Vector2((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
+            raycaster.setFromCamera(currentMouse, camera);
             const worldPos = mouseToWorld(event);
-            if (!worldPos) return;
-            const snappedPos = snapToGrid(worldPos);
-            if (isAddingDomino && previewDomino) {
-                previewDomino.position.set(snappedPos.x, DOMINO_TALL / 2, snappedPos.z);
-                const collision = checkDominoCollision(previewDomino.position);
-                previewDomino.material.color.set(collision ? 0xff6666 : 0xffffff);
-                previewDomino.material.opacity = collision ? 0.4 : 0.6;
-            }
-            if (selectedDominoData && isMoving && translationMode) {
-                const potentialPos = new THREE.Vector3(snappedPos.x, DOMINO_TALL / 2, snappedPos.z);
-                const collision = checkDominoCollision(potentialPos, selectedDominoData);
-                selectedDominoData.mesh.position.copy(potentialPos);
-                selectedDominoData.body.position.copy(potentialPos);
-                selectedDominoData.initialPos.copy(potentialPos);
-                setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR);
-            }
-            if (isSelectingSimulationDirection) {
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObjects(scene.children.filter(child => child.isSimulationArrow));
-                if (intersects.length > 0) {
-                    document.body.style.cursor = 'pointer';
-                    const arrow = intersects[0].object;
-                    if (arrow.userData.glowSprite) {
-                        arrow.userData.glowSprite.visible = true;
-                        if (!arrow.userData.isPulsating) {
-                            arrow.userData.isPulsating = true;
-                            animateGlow(arrow.userData.glowSprite);
-                        }
+            const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
+
+            if (isAddingDomino && previewDomino && !previewBatchGroup && worldPos) {
+                const snappedBasePos = snapToGrid(worldPos);
+                previewDomino.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
+                const collision = checkDominoCollision(snappedBasePos);
+                previewDomino.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        child.material.color.setHex(collision ? 0xff8888 : 0xffffff);
+                        child.material.opacity = collision ? 0.4 : 0.6;
                     }
+                });
+            } else if (isAddingDomino && previewBatchGroup && worldPos) {
+                const snappedBasePos = snapToGrid(worldPos);
+                previewBatchGroup.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
+                let collision = false;
+                for (let i = 0; i < previewBatchCount; i++) {
+                    const localPos = previewBatchGroup.children[i].position.clone();
+                    const dominoBasePos = new THREE.Vector3().addVectors(snappedBasePos, localPos);
+                    if (checkDominoCollision(dominoBasePos)) {
+                        collision = true;
+                        break;
+                    }
+                }
+                previewBatchGroup.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        child.material.color.setHex(collision ? 0xff8888 : 0xffffff);
+                        child.material.opacity = collision ? 0.4 : 0.6;
+                    }
+                });
+            } else if (selectedDominoData && isMoving && translationMode && worldPos) {
+                const snappedBasePos = snapToGrid(worldPos);
+                const potentialPivotPos = new THREE.Vector3(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
+                const collision = checkDominoCollision(snappedBasePos, selectedDominoData);
+                selectedDominoData.mesh.position.copy(potentialPivotPos);
+                selectedDominoData.body.position.set(snappedBasePos.x, snappedBasePos.y + DOMINO_TALL / 2, snappedBasePos.z);
+                setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR, 1.5);
+            } else if (isSelectingSimulationDirection) {
+                const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
+                let intersectedArrowThisFrame = null;
+                if (simulationArrows.length > 0) {
+                    const intersects = raycaster.intersectObjects(simulationArrows, true);
+                    if (intersects.length > 0) {
+                        let obj = intersects[0].object;
+                        intersectedArrowThisFrame = obj.userData.parentArrow || (obj.userData.isSimulationArrow ? obj : null);
+                    }
+                }
+                if (hoveredSimulationArrow && hoveredSimulationArrow !== intersectedArrowThisFrame) {
+                    setArrowColor(hoveredSimulationArrow, hoveredSimulationArrow.userData.originalColor);
+                    hoveredSimulationArrow.userData.isPulsing = false;
+                    if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1);
+                }
+                if (intersectedArrowThisFrame) {
+                    setArrowColor(intersectedArrowThisFrame, ARROW_COLOR_HOVER);
+                    intersectedArrowThisFrame.userData.isPulsing = true;
+                    document.body.style.cursor = 'pointer';
                 } else {
                     document.body.style.cursor = 'default';
-                    scene.children.filter(child => child.isSimulationArrow).forEach(arrow => {
-                        if (arrow.userData.glowSprite) {
-                            arrow.userData.glowSprite.visible = false;
-                            arrow.userData.isPulsating = false;
-                        }
-                    });
                 }
+                hoveredSimulationArrow = intersectedArrowThisFrame;
+            } else if (!isSimulating) {
+                updateHoverEffect(event);
             }
+            lastMousePosition = { x: event.clientX, y: event.clientY };
         }
 
         function onMouseUp(event) {
-            if (event.button !== 0) return;
-            if (isAddingDomino && previewDomino) {
+            if (event.button !== 0 || !dominoModel) return;
+            if (isAddingDomino && previewDomino && !previewBatchGroup) {
                 const worldPos = mouseToWorld(event);
                 if (worldPos) {
-                    const snappedPos = snapToGrid(worldPos);
-                    const finalPos = new THREE.Vector3(snappedPos.x, DOMINO_TALL / 2, snappedPos.z);
-                    const collision = checkDominoCollision(finalPos);
-                    if (!collision) {
-                        createDomino(finalPos, previewDomino.rotation.y);
-                    } else {
-                        showNotification("Placement overlaps existing domino!");
-                    }
+                    const snappedBasePos = snapToGrid(worldPos);
+                    const collision = checkDominoCollision(snappedBasePos);
+                    if (!collision) createDomino(snappedBasePos, previewDomino.rotation.y);
+                    else showNotification("Placement overlaps existing domino!", true);
                 }
                 previewDomino.visible = false;
                 isAddingDomino = false;
-                isDraggingDomino = false;
                 document.body.style.cursor = 'default';
                 controls.enabled = true;
-                updateHoverEffect(event);
+            } else if (isAddingDomino && previewBatchGroup) {
+                const worldPos = mouseToWorld(event);
+                if (worldPos) {
+                    const snappedBasePos = snapToGrid(worldPos);
+                    let collision = false;
+                    const positions = [];
+                    for (let i = 0; i < previewBatchCount; i++) {
+                        const localPos = previewBatchGroup.children[i].position.clone();
+                        const dominoBasePos = new THREE.Vector3().addVectors(snappedBasePos, localPos);
+                        if (checkDominoCollision(dominoBasePos)) {
+                            collision = true;
+                            break;
+                        }
+                        positions.push(dominoBasePos);
+                    }
+                    if (!collision) {
+                        positions.forEach(pos => createDomino(pos, Math.PI / 2)); // Rotate 90 degrees
+                    } else {
+                        showNotification("Batch placement overlaps existing dominoes!", true);
+                    }
+                }
+                scene.remove(previewBatchGroup);
+                previewBatchGroup = null;
+                previewBatchCount = 0;
+                isAddingDomino = false;
+                document.body.style.cursor = 'default';
+                controls.enabled = true;
             }
         }
 
@@ -993,24 +1120,66 @@
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(dominoes);
-            if (intersects.length > 0 && intersects[0].object.userData.isDomino) {
-                const targetData = dominoData.find(data => data.mesh === intersects[0].object);
-                if (targetData) {
-                    showContextMenu(event, targetData);
-                }
+            const intersects = raycaster.intersectObjects(dominoes, true);
+            if (intersects.length > 0) {
+                const targetData = findDominoDataFromObject(intersects[0].object);
+                if (targetData) showContextMenu(event, targetData);
             } else {
                 hideContextMenu();
                 selectDomino(null);
             }
         }
 
-        // --- Keyboard Interaction Logic ---
         function onKeyDown(event) {
-            if (isSimulating) return;
-            hideContextMenu();
-            if (selectedDominoData) {
-                switch (event.key.toLowerCase()) {
+            const key = event.key.toLowerCase();
+            if (key === 'escape') {
+                hideContextMenu();
+                let modeCancelled = false;
+                if (isAddingDomino) {
+                    if (previewDomino) previewDomino.visible = false;
+                    if (previewBatchGroup) {
+                        scene.remove(previewBatchGroup);
+                        previewBatchGroup = null;
+                        previewBatchCount = 0;
+                    }
+                    isAddingDomino = false;
+                    modeCancelled = true;
+                } else if (translationMode || rotationMode) {
+                    translationMode = false;
+                    rotationMode = false;
+                    isMoving = false;
+                    isRotating = false;
+                    if (selectedDominoData) {
+                        const basePos = selectedDominoData.initialBasePosition;
+                        const modelPivotOffsetY = selectedDominoData.mesh.userData.modelPivotToBottomY || 0;
+                        selectedDominoData.mesh.position.set(basePos.x, basePos.y - modelPivotOffsetY, basePos.z);
+                        selectedDominoData.mesh.quaternion.copy(selectedDominoData.initialQuat);
+                        selectedDominoData.body.position.set(basePos.x, basePos.y + DOMINO_TALL / 2, basePos.z);
+                        selectedDominoData.body.quaternion.copy(selectedDominoData.initialQuat);
+                        setEmissive(selectedDominoData, SELECT_COLOR, 1.5);
+                        if (rotationArrowSprite) {
+                            scene.remove(rotationArrowSprite);
+                            rotationArrowSprite.visible = false;
+                        }
+                    }
+                    modeCancelled = true;
+                } else if (isSelectingSimulationDirection) {
+                    clearSimulationArrows();
+                    showNotification("Simulation direction selection canceled.");
+                    return;
+                }
+                if (modeCancelled) {
+                    document.body.style.cursor = 'default';
+                    controls.enabled = true;
+                    showNotification("Action canceled.");
+                } else if (!isSimulating) {
+                    selectDomino(null);
+                }
+                return;
+            }
+
+            if (selectedDominoData && !translationMode && !rotationMode && !isSelectingSimulationDirection && !isSimulating) {
+                switch (key) {
                     case 'delete':
                     case 'backspace':
                         deleteSelectedDomino();
@@ -1018,79 +1187,75 @@
                     case 't':
                         translationMode = true;
                         rotationMode = false;
-                        isRotating = false;
                         isMoving = true;
+                        isRotating = false;
                         lastMousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-                        showNotification("Move: Domino follows mouse. Click to fix position.");
+                        showNotification("Move: Domino follows mouse. Left-click to fix. Esc to cancel.");
                         document.body.style.cursor = 'move';
                         controls.enabled = false;
+                        hideContextMenu();
                         break;
                     case 'r':
                         rotationMode = true;
                         translationMode = false;
-                        isMoving = false;
                         isRotating = true;
+                        isMoving = false;
                         lastMousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-                        showNotification("Rotate: Move mouse horizontally to rotate (±45°). Click to fix rotation.");
+                        showNotification("Rotate: Drag mouse horizontally. Left-click to fix. Esc to cancel.");
                         document.body.style.cursor = 'ew-resize';
                         controls.enabled = false;
                         animateRotation(selectedDominoData);
-                        break;
-                    case 'escape':
-                        if (isSelectingSimulationDirection) {
-                            scene.children.filter(child => child.isSimulationArrow || child.isGlowSprite).forEach(child => {
-                                scene.remove(child);
-                                if (child.material.map) child.material.map.dispose();
-                                child.material.dispose();
-                                child.geometry.dispose();
-                            });
-                            isSelectingSimulationDirection = false;
-                            simulationTargetData = null;
-                            document.body.style.cursor = 'default';
-                            controls.enabled = true;
-                            showNotification("Simulation direction selection canceled.");
-                        }
-                        selectDomino(null);
-                        translationMode = false;
-                        rotationMode = false;
-                        isMoving = false;
-                        isRotating = false;
-                        document.body.style.cursor = 'default';
-                        controls.enabled = true;
+                        hideContextMenu();
                         break;
                 }
             }
-            switch (event.key.toLowerCase()) {
+
+            switch (key) {
                 case 'g':
-                    const cb = document.getElementById('toggle-grid');
-                    cb.checked = !cb.checked;
-                    grid.visible = cb.checked;
+                    if (!translationMode && !rotationMode && !isAddingDomino) {
+                        const cb = document.getElementById('toggle-grid');
+                        cb.checked = !cb.checked;
+                        grid.visible = cb.checked;
+                    }
                     break;
                 case ' ':
-                    if (!isSimulating && !isSelectingSimulationDirection) {
+                    if (!isSimulating && !translationMode && !rotationMode && !isAddingDomino && !isSelectingSimulationDirection) {
                         startSimulation();
+                        event.preventDefault();
                     }
-                    event.preventDefault();
-                    break;
-                case 'escape':
-                    hideContextMenu();
                     break;
             }
         }
 
         // --- Animation Loop ---
         const clock = new THREE.Clock();
-        const fixedTimeStep = 1 / 60;
-        const maxSubSteps = 5;
+        const fixedTimeStep = 1 / 240;
+        const maxSubSteps = 10;
+        const pulseSpeed = 5;
+        const pulseMagnitude = 0.1;
+
         function animate() {
             requestAnimationFrame(animate);
             const deltaTime = Math.min(clock.getDelta(), 0.1);
+            if (isAddingDomino || (translationMode && isMoving) || (rotationMode && isRotating) || isSelectingSimulationDirection) {
+                controls.enabled = false;
+            } else {
+                controls.enabled = document.getElementById('toggle-orbit').textContent !== 'Unlock Camera';
+            }
             if (controls.enabled) controls.update(deltaTime);
+            if (hoveredSimulationArrow && hoveredSimulationArrow.userData.isPulsing) {
+                hoveredSimulationArrow.userData.pulseTime += deltaTime * pulseSpeed;
+                const scaleOffset = 1 + Math.sin(hoveredSimulationArrow.userData.pulseTime) * pulseMagnitude;
+                if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(scaleOffset, scaleOffset, scaleOffset);
+            }
             if (isSimulating) {
                 world.step(fixedTimeStep, deltaTime, maxSubSteps);
-                dominoData.forEach(data => {
-                    data.mesh.position.copy(data.body.position);
-                    data.mesh.quaternion.copy(data.body.quaternion);
+                dominoData.forEach((data) => {
+                    const body = data.body;
+                    const mesh = data.mesh;
+                    const modelPivotToBottomY_offset = mesh.userData.modelPivotToBottomY || 0;
+                    mesh.position.set(body.position.x, body.position.y - DOMINO_TALL / 2 - modelPivotToBottomY_offset, body.position.z);
+                    mesh.quaternion.copy(body.quaternion);
                 });
             }
             renderer.render(scene, camera);
@@ -1098,10 +1263,9 @@
 
         // --- Initialization ---
         console.log("Initializing Domino Simulator...");
-        createPreviewDomino();
         initEventListeners();
         animate();
         console.log("Initialization Complete.");
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93ae8caeaf867bae',t:'MTc0NjQzMDQwNC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93aea64a2d184546',t:'MTc0NjQzMTQ1My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
