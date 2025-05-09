@@ -232,14 +232,14 @@
         const groundDominoContactMaterial = new CANNON.ContactMaterial(
             groundPhysMaterial,
             dominoPhysMaterial,
-            { friction: 0.1, restitution: 0.0, contactEquationStiffness: 1e5, contactEquationRelaxation: 2.0 }
+            { friction: 0.01, restitution: 0.0, contactEquationStiffness: 1e5, contactEquationRelaxation: 2.0 }
         );
         world.addContactMaterial(groundDominoContactMaterial);
         const dominoDominoContactMaterial = new CANNON.ContactMaterial(
             dominoPhysMaterial,
             dominoPhysMaterial,
             {
-                friction: 0.01,
+                friction: 0.005,
                 restitution: 0.0,
                 contactEquationStiffness: 1e6,
                 contactEquationRelaxation: 1.5,
