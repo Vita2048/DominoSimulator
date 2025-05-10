@@ -116,6 +116,14 @@
                 </div>
                 <span>Add Batch Circle</span>
             </div>
+            <div class="toolbar-button" id="add-batch-spiral-button">
+                <div class="toolbar-button-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                        <path d="M12 2 A2 2 0 0 1 12 6 A6 6 0 0 1 12 18 A10 10 0 0 1 12 22" fill="none" stroke="#333" stroke-width="2"/>
+                    </svg>
+                </div>
+                <span>Add Batch Spiral</span>
+            </div>			
         </div>
         <div class="toolbar-section">
             <div class="toolbar-section-title">Simulation</div>
@@ -302,6 +310,9 @@
         let previewBatchCount = 0;
         let previewCircleGroup = null; 
         let previewCircleCount = 0;
+        let previewSpiralGroup = null;
+        let previewSpiralCount = 0;
+		
 
         let lastMousePosition = { x: 0, y: 0 };
         let translationMode = false;
@@ -361,6 +372,116 @@
                 showNotification("Error: Could not load domino model.", true);
             }
         );
+		
+function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
+    if (previewSpiralGroup) {
+        scene.remove(previewSpiralGroup);
+        previewSpiralGroup.traverse(child => {
+            if (child.isMesh) {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+            }
+        });
+    }
+    previewSpiralGroup = new THREE.Group();
+    const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
+    
+    const N = numberOfPieces;
+    
+    
+    // For a spiral of dominos, we need to consider the length (which would be DOMINO_WIDE in this case)
+    // since that's what affects the spacing when they're placed in sequence
+    const dominoLength = DOMINO_WIDE;
+    
+    // Constants for the spiral
+    const desiredSpacing = dominoLength * 1; // Distance between dominos
+    const startingRadius = dominoLength * 2; // Minimum distance from center to avoid crowding
+    
+    // Array to store the positions and angles
+    const positions = [];
+    
+    // Place the first domino at the starting radius
+    let currentRadius = startingRadius;
+    let currentAngle = 0;
+    positions.push({ radius: currentRadius, angle: currentAngle });
+    
+    // Calculate positions for each remaining domino
+    for (let i = 1; i < N; i++) {
+        // Calculate angle increment based on desired spacing and current radius
+        // For constant arc length, angle = arcLength / radius
+        const angleIncrement = desiredSpacing / currentRadius;
+        
+        // Update angle
+        currentAngle += angleIncrement;
+        
+        // Calculate radius increment using the growth rate parameter
+        // Higher growth rate = faster expanding spiral
+        const baseRadiusIncrement = desiredSpacing / (2 * Math.PI);
+        const radiusIncrement = baseRadiusIncrement * spiralGrowthRate;
+        
+        // Update radius
+        currentRadius += radiusIncrement;
+        
+        // Store this position
+        positions.push({ radius: currentRadius, angle: currentAngle });
+    }
+    
+    // Now place the dominos at the calculated positions
+    for (let i = 0; i < positions.length; i++) {
+        const { radius, angle } = positions[i];
+        
+        // Calculate position
+        const posX = radius * Math.cos(angle);
+        const posZ = radius * Math.sin(angle);
+        
+        const singlePreview = dominoModel.clone();
+        singlePreview.traverse((child) => {
+            if (child.isMesh) {
+                child.material = child.material.clone();
+                child.material.transparent = true;
+                child.material.opacity = 0.6;
+                child.userData.isDomino = true;
+            }
+        });
+        singlePreview.position.set(posX, 0 - modelPivotCorrection, posZ);
+        
+        // Orient domino tangentially to the spiral
+        // The tangent is perpendicular to the radius
+        const tangentAngle = angle + Math.PI/2;
+        singlePreview.rotation.y = -tangentAngle;
+        
+        previewSpiralGroup.add(singlePreview);
+    }
+    
+    scene.add(previewSpiralGroup);
+    previewSpiralCount = numberOfPieces;
+}
+
+        function onAddBatchSpiral() {
+            if (isSimulating || !dominoModel) return;
+            const numDominosStr = prompt("Enter number of pieces for the spiral (20-80):", "40");
+            if (numDominosStr === null) return;
+            const n = parseInt(numDominosStr);
+            if (isNaN(n) || n < 20 || n > 80) {
+                showNotification("Invalid number. Please enter a value between 20 and 80.", true);
+                return;
+            }
+
+            if (previewDomino) { previewDomino.visible = false; }
+            previewDomino = null;
+            if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewBatchGroup = null; previewBatchCount = 0; }
+            if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewCircleGroup = null; previewCircleCount = 0; }
+            if (previewSpiralGroup) { scene.remove(previewSpiralGroup); previewSpiralGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewSpiralGroup = null; previewSpiralCount = 0; }
+
+            createPreviewSpiral(n);
+            isAddingDomino = true;
+            controls.enabled = false;
+            document.body.style.cursor = 'grabbing';
+            hideContextMenu();
+        }
 
         // --- Domino Creation ---
         function createPreviewDomino() {
@@ -1091,6 +1212,7 @@ function createPreviewCircle(numberOfPieces) {
             document.getElementById('domino-template').addEventListener('mousedown', onStartDragDominoTemplate);
             document.getElementById('add-batch-button').addEventListener('click', onAddBatch);
             document.getElementById('add-batch-circle-button').addEventListener('click', onAddBatchCircle); 
+			document.getElementById('add-batch-spiral-button').addEventListener('click', onAddBatchSpiral);
             document.getElementById('reset-button').addEventListener('click', resetSimulation);
             document.getElementById('clear-button').addEventListener('click', clearCanvas);
             document.getElementById('toggle-grid').addEventListener('change', (event) => { grid.visible = event.target.checked; });
@@ -1218,47 +1340,47 @@ function createPreviewCircle(numberOfPieces) {
         }
 
         function onMouseMove(event) {
-            if (!dominoModel) return; 
+            if (!dominoModel) return;
 
             const currentMouse = new THREE.Vector2(
                 ((event.clientX - renderer.domElement.getBoundingClientRect().left) / renderer.domElement.width) * 2 - 1,
                 -((event.clientY - renderer.domElement.getBoundingClientRect().top) / renderer.domElement.height) * 2 + 1
             );
             raycaster.setFromCamera(currentMouse, camera);
-            const worldPos = mouseToWorld(event); 
+            const worldPos = mouseToWorld(event);
             const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
 
             if (isAddingDomino && worldPos) {
-                const snappedBasePos = snapToGrid(worldPos); 
-                
-                if (previewDomino) { 
+                const snappedBasePos = snapToGrid(worldPos);
+
+                if (previewDomino) {
                     previewDomino.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
                     const collision = checkDominoCollision(snappedBasePos);
                     previewDomino.traverse((child) => {
                         if (child.isMesh && child.material) {
-                            child.material.color.setHex(collision ? 0xff8888 : 0xffffff); 
+                            child.material.color.setHex(collision ? 0xff8888 : 0xffffff);
                             child.material.opacity = collision ? 0.4 : 0.6;
                         }
                     });
-                } else if (previewBatchGroup) { 
-                    previewBatchGroup.position.copy(snappedBasePos); 
+                } else if (previewBatchGroup) {
+                    previewBatchGroup.position.copy(snappedBasePos);
                     let collisionInBatch = false;
-                    const tempWorldPosCheck = new THREE.Vector3(); 
+                    const tempWorldPosCheck = new THREE.Vector3();
                     for (let i = 0; i < previewBatchCount; i++) {
                         previewBatchGroup.children[i].getWorldPosition(tempWorldPosCheck);
-                        const dominoBasePosInWorld = snapToGrid(tempWorldPosCheck); 
+                        const dominoBasePosInWorld = snapToGrid(tempWorldPosCheck);
                         if (checkDominoCollision(dominoBasePosInWorld)) {
                             collisionInBatch = true; break;
                         }
                     }
-                    previewBatchGroup.traverse((child) => { 
-                        if (child.isMesh && child.material && child.userData.isDomino) { 
+                    previewBatchGroup.traverse((child) => {
+                        if (child.isMesh && child.material && child.userData.isDomino) {
                             child.material.color.setHex(collisionInBatch ? 0xff8888 : 0xffffff);
                             child.material.opacity = collisionInBatch ? 0.4 : 0.6;
                         }
                     });
-                } else if (previewCircleGroup) { 
-                    previewCircleGroup.position.copy(snappedBasePos); 
+                } else if (previewCircleGroup) {
+                    previewCircleGroup.position.copy(snappedBasePos);
                     let collisionInCircle = false;
                     const tempWorldPosCheck = new THREE.Vector3();
                     for (const childPreview of previewCircleGroup.children) {
@@ -1274,8 +1396,25 @@ function createPreviewCircle(numberOfPieces) {
                             child.material.opacity = collisionInCircle ? 0.4 : 0.6;
                         }
                     });
+                } else if (previewSpiralGroup) {
+                    previewSpiralGroup.position.copy(snappedBasePos);
+                    let collisionInSpiral = false;
+                    const tempWorldPosCheck = new THREE.Vector3();
+                    for (const childPreview of previewSpiralGroup.children) {
+                        childPreview.getWorldPosition(tempWorldPosCheck);
+                        const childSnappedBasePos = snapToGrid(tempWorldPosCheck);
+                        if (checkDominoCollision(childSnappedBasePos)) {
+                            collisionInSpiral = true; break;
+                        }
+                    }
+                    previewSpiralGroup.traverse((child) => {
+                        if (child.isMesh && child.material && child.userData.isDomino) {
+                            child.material.color.setHex(collisionInSpiral ? 0xff8888 : 0xffffff);
+                            child.material.opacity = collisionInSpiral ? 0.4 : 0.6;
+                        }
+                    });
                 }
-            } 
+            }
             else if (selectedDominoData && isMoving && translationMode && worldPos) {
                 const snappedBasePos = snapToGrid(worldPos); 
                 selectedDominoData.mesh.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
@@ -1320,23 +1459,23 @@ function createPreviewCircle(numberOfPieces) {
             lastMousePosition = { x: event.clientX, y: event.clientY };
         }
 
-        function onMouseUp(event) {
-            if (event.button !== 0 || !dominoModel) return; 
+		function onMouseUp(event) {
+            if (event.button !== 0 || !dominoModel) return;
 
             if (isAddingDomino) {
                 const worldPos = mouseToWorld(event);
                 if (worldPos) {
-                    const snappedFinalPos = snapToGrid(worldPos); // Snapped position for the center of the action
+                    const snappedFinalPos = snapToGrid(worldPos);
 
-                    if (previewDomino) { 
+                    if (previewDomino) {
                         const collision = checkDominoCollision(snappedFinalPos);
                         if (!collision) {
-                            createDomino(snappedFinalPos, previewDomino.rotation.y); 
+                            createDomino(snappedFinalPos, previewDomino.rotation.y);
                         } else {
                             showNotification("Placement overlaps existing domino!", true);
                         }
                         previewDomino.visible = false;
-                    } else if (previewBatchGroup) { 
+                    } else if (previewBatchGroup) {
                         let collisionInBatch = false;
                         const finalPositionsAndRotations = [];
                         const tempWorldPosPlace = new THREE.Vector3();
@@ -1344,14 +1483,13 @@ function createPreviewCircle(numberOfPieces) {
                         for (let i = 0; i < previewBatchCount; i++) {
                             const childPreview = previewBatchGroup.children[i];
                             childPreview.getWorldPosition(tempWorldPosPlace);
-                            const childSnappedBasePos = snapToGrid(tempWorldPosPlace); 
-
+                            const childSnappedBasePos = snapToGrid(tempWorldPosPlace);
                             if (checkDominoCollision(childSnappedBasePos)) {
                                 collisionInBatch = true; break;
                             }
                             finalPositionsAndRotations.push({
                                 position: childSnappedBasePos,
-                                rotationY: childPreview.rotation.y 
+                                rotationY: childPreview.rotation.y
                             });
                         }
 
@@ -1360,33 +1498,26 @@ function createPreviewCircle(numberOfPieces) {
                         } else {
                             showNotification("Batch line placement overlaps existing dominoes!", true);
                         }
-                        scene.remove(previewBatchGroup); 
+                        scene.remove(previewBatchGroup);
                         previewBatchGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}});
                         previewBatchGroup = null;
                         previewBatchCount = 0;
-                    } else if (previewCircleGroup) { 
-                        const circleCenterPos = snappedFinalPos; // Snapped mouse click for the circle's center
+                    } else if (previewCircleGroup) {
+                        const circleCenterPos = snappedFinalPos;
                         let collisionInCircle = false;
                         const finalDominosToCreate = [];
 
                         for (const childPreview of previewCircleGroup.children) {
-                            // childPreview.position is the calculated local offset (radius*cos, y_offset, radius*sin)
-                            // childPreview.rotation.y is the calculated orientation (angle - Math.PI / 2)
-
-                            // Calculate the target world base position for this domino's center
                             const targetDominoBasePosition = new THREE.Vector3(
                                 circleCenterPos.x + childPreview.position.x,
-                                0, // Base Y is on the ground plane for createDomino
+                                0,
                                 circleCenterPos.z + childPreview.position.z
                             );
-                            
-                            // checkDominoCollision will internally snap its input for grid-based checking
-                            if (checkDominoCollision(targetDominoBasePosition)) { 
-                                collisionInCircle = true;
-                                break;
+                            if (checkDominoCollision(targetDominoBasePosition)) {
+                                collisionInCircle = true; break;
                             }
                             finalDominosToCreate.push({
-                                position: targetDominoBasePosition, // Use the precise, un-snapped position for creation
+                                position: targetDominoBasePosition,
                                 rotationY: childPreview.rotation.y
                             });
                         }
@@ -1400,6 +1531,35 @@ function createPreviewCircle(numberOfPieces) {
                         previewCircleGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}});
                         previewCircleGroup = null;
                         previewCircleCount = 0;
+                    } else if (previewSpiralGroup) {
+                        const spiralCenterPos = snappedFinalPos;
+                        let collisionInSpiral = false;
+                        const finalDominosToCreate = [];
+
+                        for (const childPreview of previewSpiralGroup.children) {
+                            const targetDominoBasePosition = new THREE.Vector3(
+                                spiralCenterPos.x + childPreview.position.x,
+                                0,
+                                spiralCenterPos.z + childPreview.position.z
+                            );
+                            if (checkDominoCollision(targetDominoBasePosition)) {
+                                collisionInSpiral = true; break;
+                            }
+                            finalDominosToCreate.push({
+                                position: targetDominoBasePosition,
+                                rotationY: childPreview.rotation.y
+                            });
+                        }
+
+                        if (!collisionInSpiral) {
+                            finalDominosToCreate.forEach(d => createDomino(d.position, d.rotationY));
+                        } else {
+                            showNotification("Batch spiral placement overlaps existing dominoes!", true);
+                        }
+                        scene.remove(previewSpiralGroup);
+                        previewSpiralGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}});
+                        previewSpiralGroup = null;
+                        previewSpiralCount = 0;
                     }
                 }
                 isAddingDomino = false;
