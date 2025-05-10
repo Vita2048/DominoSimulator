@@ -28,6 +28,7 @@
             background-color: rgba(255, 255, 255, 0.85); border-right: 1px solid #ccc;
             padding: 20px; box-sizing: border-box; display: flex; flex-direction: column;
             z-index: 10; box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1); transition: transform 0.3s ease;
+            overflow-y: auto; 
         }
         .toolbar-title { font-size: 18px; font-weight: bold; margin-bottom: 20px; text-align: center; }
         .toolbar-section { margin-bottom: 20px; }
@@ -106,7 +107,14 @@
                         <rect x="16" y="6" width="4" height="12" fill="#333"/>
                     </svg>
                 </div>
-                <span>Add Batch</span>
+                <span>Add Batch Line</span>
+            </div>
+            <div class="toolbar-button" id="add-batch-circle-button"> <div class="toolbar-button-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="8" stroke="#333" stroke-width="2" fill="none"/>
+                    </svg>
+                </div>
+                <span>Add Batch Circle</span>
             </div>
         </div>
         <div class="toolbar-section">
@@ -142,7 +150,8 @@
             <h3>Controls</h3>
             <ul>
                 <li><strong>Add Domino:</strong> Drag from the toolbar to the canvas (snaps to grid)</li>
-                <li><strong>Add Batch:</strong> Click "Add Batch", enter number (2-20), drag to place</li>
+                <li><strong>Add Batch Line:</strong> Click "Add Batch Line", enter number (2-20), drag to place</li>
+                <li><strong>Add Batch Circle:</strong> Click "Add Batch Circle", enter number (20-40), drag to place center</li>
                 <li><strong>Select:</strong> Left-click on a domino</li>
                 <li><strong>Hover:</strong> Mouse over a domino to highlight blue</li>
                 <li><strong>Move (T):</strong> Right-click domino -> Move, then left-click & drag</li>
@@ -172,13 +181,13 @@
     <script>
         // --- Constants ---
         const DOMINO_TALL = 2.01642;
-        const DOMINO_WIDE = 1.01067;
-        const DOMINO_THICK = 0.258223;
+        const DOMINO_WIDE = 1.01067; // Corresponds to local Z-axis of physics body
+        const DOMINO_THICK = 0.258223; // Corresponds to local X-axis of physics body
         const PLANE_SIZE = 100;
         const GRID_SIZE = 100;
         const GRID_DIVISIONS = 100;
         const GRID_UNIT_SIZE = 1;
-        const MIN_PLACEMENT_DISTANCE = 1;
+        const MIN_PLACEMENT_DISTANCE = 1; 
         const SELECT_COLOR = 0x555555;
         const HOVER_COLOR = 0x0055ff;
         const COLLISION_COLOR = 0xff0000;
@@ -260,12 +269,12 @@
         const groundBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
         groundBody.addShape(groundShape);
         groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
-        groundBody.position.set(0, 0.01, 0); // Position ground slightly above y=0 to avoid z-fighting with grid
+        groundBody.position.set(0, 0.01, 0); 
         world.addBody(groundBody);
 
         // --- Grid Helper ---
         const grid = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x666666, 0xaaaaaa);
-        grid.position.y = 0.01; // Align grid with the physics ground
+        grid.position.y = 0.01; 
         grid.material.opacity = 0.6;
         grid.material.transparent = true;
         grid.visible = true;
@@ -281,16 +290,19 @@
         controls.maxPolarAngle = Math.PI / 2 - 0.05;
 
         // --- State Variables ---
-        let dominoes = []; // Array of THREE.Mesh objects for visual dominoes
-        let dominoData = []; // Array of {mesh, body, initialBasePosition, initialQuat}
+        let dominoes = []; 
+        let dominoData = []; 
         let selectedDominoData = null;
         let hoveredDominoData = null;
         let hoveredSimulationArrow = null;
         let isSimulating = false;
-        let isAddingDomino = false;
-        let previewDomino = null;
-        let previewBatchGroup = null;
+        let isAddingDomino = false; 
+        let previewDomino = null; 
+        let previewBatchGroup = null; 
         let previewBatchCount = 0;
+        let previewCircleGroup = null; 
+        let previewCircleCount = 0;
+
         let lastMousePosition = { x: 0, y: 0 };
         let translationMode = false;
         let rotationMode = false;
@@ -301,7 +313,7 @@
         const contextMenu = document.getElementById('custom-context-menu');
         let isSelectingSimulationDirection = false;
         let simulationTargetData = null;
-        let dominoModel = null; // Loaded GLB model template
+        let dominoModel = null; 
         let rotationArrowSprite = null;
 
         // --- Load GLB Model ---
@@ -314,9 +326,8 @@
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
-                        child.userData.isDomino = true; // Mark as part of a domino
+                        child.userData.isDomino = true; 
                         if (child.material) {
-                            // Ensure materials are standard and can have emissive properties
                             child.material = new THREE.MeshStandardMaterial({
                                 map: child.material.map || null,
                                 normalMap: child.material.normalMap || null,
@@ -326,27 +337,25 @@
                                 emissiveIntensity: 1,
                                 color: child.material.color || 0xffffff
                             });
-                            if (child.geometry) child.geometry.computeBoundingBox(); // For accurate bounding box
+                            if (child.geometry) child.geometry.computeBoundingBox(); 
                         }
                     }
                 });
-                // Calculate scale factor to match DOMINO_TALL constant
                 const box = new THREE.Box3().setFromObject(dominoModel);
                 const size = new THREE.Vector3();
                 box.getSize(size);
                 const scaleFactor = DOMINO_TALL / size.y;
                 dominoModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                // After scaling, calculate the offset from the model's pivot to its visual bottom
                 const scaledBox = new THREE.Box3().setFromObject(dominoModel);
-                dominoModel.userData.pivotToBottomY = scaledBox.min.y; // This is a negative value if pivot is above bottom, 0 if pivot is at bottom
+                dominoModel.userData.pivotToBottomY = scaledBox.min.y; 
                 
                 console.log("Scaled model size:", scaledBox.getSize(new THREE.Vector3()));
                 console.log("Pivot to bottom Y offset (scaledBox.min.y):", dominoModel.userData.pivotToBottomY);
                 
-                createPreviewDomino(); // Create the transparent preview domino
+                createPreviewDomino(); 
             },
-            undefined, // onProgress callback (optional)
+            undefined, 
             (error) => {
                 console.error("Error loading GLB model:", error);
                 showNotification("Error: Could not load domino model.", true);
@@ -356,19 +365,22 @@
         // --- Domino Creation ---
         function createPreviewDomino() {
             if (!dominoModel) return;
+            if (previewDomino) { 
+                scene.remove(previewDomino);
+                previewDomino.traverse(child => { if (child.isMesh) {if (child.geometry) child.geometry.dispose(); if (child.material) child.material.dispose();} });
+            }
             previewDomino = dominoModel.clone();
             previewDomino.traverse((child) => {
                 if (child.isMesh) {
-                    child.material = child.material.clone(); // Clone material for transparency
+                    child.material = child.material.clone(); 
                     child.material.transparent = true;
                     child.material.opacity = 0.6;
                     child.userData.isDomino = true;
                 }
             });
             const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
-            // Position preview domino so its visual bottom is at y=0 (before snapping)
             previewDomino.position.y = 0 - modelPivotCorrection; 
-            previewDomino.rotation.y = 0; // Ensure preview domino starts with no rotation
+            previewDomino.rotation.y = 0; 
             previewDomino.visible = false;
             scene.add(previewDomino);
         }
@@ -379,36 +391,23 @@
                 return null;
             }
 
-            // Clone the visual model
             const dominoMesh = dominoModel.clone();
             dominoMesh.userData.isDomino = true;
-
-            // Store the pivot offset for this instance (it's scaledBox.min.y)
             const modelPivotToBottomY_offset = dominoModel.userData.pivotToBottomY || 0;
             dominoMesh.userData.modelPivotToBottomY = modelPivotToBottomY_offset;
-
-            // Position the visual model's pivot such that its visual bottom is at basePosition.y
-            // basePosition.y is typically 0 (on the grid)
             dominoMesh.position.set(basePosition.x, basePosition.y - modelPivotToBottomY_offset, basePosition.z);
             dominoMesh.rotation.y = rotationY;
 
             dominoMesh.traverse((child) => {
                 if (child.isMesh && child.material) {
-                    child.material = child.material.clone(); // Each domino gets its own material instance
+                    child.material = child.material.clone(); 
                     child.userData.isDominoPart = true;
                 }
             });
             scene.add(dominoMesh);
 
-            // Physics body setup
-            // The CANNON.Box shape is centered at its local origin.
-            // Dimensions are full width, height, depth. Half-extents are used for constructor.
             const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_THICK / 2, DOMINO_TALL / 2, DOMINO_WIDE / 2));
-
-            // Position the physics body's Center of Mass (CoM).
-            // If basePosition.y is the desired bottom of the domino, CoM is DOMINO_TALL / 2 above that.
             const bodyCoMPosition = new CANNON.Vec3(basePosition.x, basePosition.y + DOMINO_TALL / 2, basePosition.z);
-
             const dominoBody = new CANNON.Body({
                 mass: 1.0,
                 position: bodyCoMPosition,
@@ -419,88 +418,42 @@
                 collisionResponse: true
             });
 
-            // Apply the initial rotation to the physics body
             dominoBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
             dominoBody.allowSleep = true;
             dominoBody.sleepSpeedLimit = 0.5;
             dominoBody.sleepTimeLimit = 1.0;
 
-            // Link the physics body to the visual model and vice-versa
             dominoMesh.userData.body = dominoBody;
-            dominoBody.userData = { mesh: dominoMesh }; // Store reference to mesh in body's userData
+            dominoBody.userData = { mesh: dominoMesh }; 
 
             const data = {
                 mesh: dominoMesh,
                 body: dominoBody,
-                initialBasePosition: basePosition.clone(), // Store initial snapped base position
-                initialQuat: dominoBody.quaternion.clone() // Store initial orientation
+                initialBasePosition: basePosition.clone(), 
+                initialQuat: dominoBody.quaternion.clone() 
             };
 
             dominoData.push(data);
-            dominoes.push(dominoMesh); // Keep a flat list of meshes for raycasting
+            dominoes.push(dominoMesh); 
             world.addBody(dominoBody);
-
-            // Debugging: Add a visual helper for the collision box
-            //addCollisionBoxHelper(dominoBody, data);
-
             return data;
         }
         
-        function addCollisionBoxHelper(body, data) {
-            const shape = body.shapes[0]; // Assuming first shape is the box
-            const geometry = new THREE.BoxGeometry(
-                shape.halfExtents.x * 2,
-                shape.halfExtents.y * 2,
-                shape.halfExtents.z * 2
-            );
-            const material = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, transparent: true, opacity: 0.5 });
-            const helperMesh = new THREE.Mesh(geometry, material);
-            
-            // The helper mesh's origin is its center, just like the Cannon.Box.
-            // So, its position and quaternion can directly copy the body's.
-            helperMesh.position.copy(body.position);
-            helperMesh.quaternion.copy(body.quaternion);
-            helperMesh.userData.isCollisionHelper = true; // Mark for easy identification/removal
-            scene.add(helperMesh);
-            
-            data.userData = data.userData || {}; // Ensure userData exists on the domino data object
-            data.userData.collisionHelper = helperMesh; // Store reference to helper
-
-            // Update the helper's position and rotation during the simulation
-            // This needs to be an event listener on the world or called in animate loop
-            // For simplicity, adding to world's postStep event
-            const updateHelperVisuals = () => {
-                if (data.userData && data.userData.collisionHelper && data.body) { // Check if body and helper still exist
-                     data.userData.collisionHelper.position.copy(data.body.position);
-                     data.userData.collisionHelper.quaternion.copy(data.body.quaternion);
-                } else {
-                    // If body or helper is gone (e.g., domino deleted), remove this listener
-                    world.removeEventListener('postStep', updateHelperVisuals);
-                }
-            };
-            world.addEventListener('postStep', updateHelperVisuals);
-            // Store the listener function so it can be removed if the domino is deleted
-            data.userData.collisionHelperUpdater = updateHelperVisuals;
-        }
-
-
         // --- Collision & Placement ---
         function snapToGrid(position) {
             const snappedX = Math.round(position.x / GRID_UNIT_SIZE) * GRID_UNIT_SIZE;
             const snappedZ = Math.round(position.z / GRID_UNIT_SIZE) * GRID_UNIT_SIZE;
-            // Y position is the base of the domino, typically on the grid surface
             return new THREE.Vector3(snappedX, 0, snappedZ); 
         }
 
         function checkDominoCollision(position, excludeData = null) {
-            const snappedPos = snapToGrid(position); // We care about collision at grid cells
+            const snappedPos = snapToGrid(position); 
             for (const data of dominoData) {
-                if (data === excludeData) continue; // Don't check against self during move
-                // Using initialBasePosition as dominoes are placed on grid cells
+                if (data === excludeData) continue; 
                 const dx = data.initialBasePosition.x - snappedPos.x;
                 const dz = data.initialBasePosition.z - snappedPos.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance < MIN_PLACEMENT_DISTANCE) return true; // Collision if too close
+                if (distance < MIN_PLACEMENT_DISTANCE) return true; 
             }
             return false;
         }
@@ -510,7 +463,6 @@
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            // Intersect with the visual ground plane
             const intersects = raycaster.intersectObject(ground); 
             return intersects.length > 0 ? intersects[0].point : null;
         }
@@ -529,12 +481,9 @@
         function findDominoDataFromObject(object) {
             let current = object;
             while (current) {
-                // Check if current object itself is the main mesh linked to a body
                 if (current.userData && current.userData.body) {
                     return dominoData.find(data => data.mesh === current);
                 }
-                // Check if current object is a part of a domino (e.g. child mesh)
-                // and its parent is the main mesh linked to a body
                 if (current.parent && current.parent.userData && current.parent.userData.body && current.userData.isDominoPart) {
                      return dominoData.find(data => data.mesh === current.parent);
                 }
@@ -543,11 +492,10 @@
             return null;
         }
 
-
         function updateHoverEffect(event) {
             if (isAddingDomino || isSimulating || translationMode || rotationMode || isSelectingSimulationDirection) {
                 if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
-                    setEmissive(hoveredDominoData, 0x000000); // Clear previous hover
+                    setEmissive(hoveredDominoData, 0x000000); 
                 }
                 hoveredDominoData = null;
                 return;
@@ -558,20 +506,19 @@
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
 
-            const intersects = raycaster.intersectObjects(dominoes, true); // Intersect all domino meshes (and their children)
+            const intersects = raycaster.intersectObjects(dominoes, true); 
             let currentlyHoveredData = null;
 
             if (intersects.length > 0) {
                 currentlyHoveredData = findDominoDataFromObject(intersects[0].object);
             }
 
-            // If hover changed
             if (hoveredDominoData !== currentlyHoveredData) {
                 if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
-                    setEmissive(hoveredDominoData, 0x000000); // Clear old hover if not selected
+                    setEmissive(hoveredDominoData, 0x000000); 
                 }
                 if (currentlyHoveredData && currentlyHoveredData !== selectedDominoData) {
-                    setEmissive(currentlyHoveredData, HOVER_COLOR, 1.5); // Apply new hover if not selected
+                    setEmissive(currentlyHoveredData, HOVER_COLOR, 1.5); 
                 }
                 hoveredDominoData = currentlyHoveredData;
             }
@@ -579,27 +526,25 @@
 
         // --- Selection & Manipulation ---
         function selectDomino(dataToSelect) {
-            if (selectedDominoData === dataToSelect && dataToSelect !== null) return; // Already selected
+            if (selectedDominoData === dataToSelect && dataToSelect !== null) return; 
 
             if (selectedDominoData) {
-                setEmissive(selectedDominoData, 0x000000); // Clear previous selection
+                setEmissive(selectedDominoData, 0x000000); 
             }
 
             if (isSelectingSimulationDirection && selectedDominoData !== dataToSelect) {
-                clearSimulationArrows(); // Clear arrows if selection changes during direction picking
+                clearSimulationArrows(); 
             }
 
             selectedDominoData = dataToSelect;
 
             if (selectedDominoData) {
-                setEmissive(selectedDominoData, SELECT_COLOR, 1.5); // Highlight new selection
+                setEmissive(selectedDominoData, SELECT_COLOR, 1.5); 
                 if (hoveredDominoData === selectedDominoData) {
-                    // If the selected was also hovered, clear hover visual as selection takes precedence
                     hoveredDominoData = null; 
                 }
             } else {
-                // Deselected
-                if (translationMode || rotationMode) { // Cancel ongoing transformations
+                if (translationMode || rotationMode) { 
                     translationMode = false;
                     rotationMode = false;
                     isMoving = false;
@@ -608,7 +553,6 @@
                     controls.enabled = true;
                     if (rotationArrowSprite) scene.remove(rotationArrowSprite);
                 }
-                // If there was a hovered item that is not the (now null) selected one, re-apply hover
                 if (hoveredDominoData) {
                      setEmissive(hoveredDominoData, HOVER_COLOR, 1.5);
                 }
@@ -616,42 +560,28 @@
             hideContextMenu();
         }
 
-
         function createRotationArrows() {
-            // Creates a sprite with a circular arrow texture for rotation indication
             const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
+            canvas.width = 128; canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            ctx.strokeStyle = '#ff0000'; // Red color for arrows
-            ctx.lineWidth = 8; // Thicker lines
-            ctx.lineCap = 'round';
-            
-            // Draw two semi-circular arrows
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 8; ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.arc(64, 64, 45, Math.PI * 0.70, Math.PI * 1.80, false); // Adjusted angles for better look
+            ctx.arc(64, 64, 45, Math.PI * 0.70, Math.PI * 1.80, false); 
             ctx.moveTo(64 + 45 * Math.cos(Math.PI * 1.80) - 5 * Math.sin(Math.PI * 1.80) , 64 + 45 * Math.sin(Math.PI * 1.80) + 5 * Math.cos(Math.PI * 1.80));
             ctx.lineTo(64 + 45 * Math.cos(Math.PI * 1.80) + 10 * Math.sin(Math.PI * 1.80), 64 + 45 * Math.sin(Math.PI * 1.80) - 10 * Math.cos(Math.PI * 1.80));
             ctx.lineTo(64 + 45 * Math.cos(Math.PI * 1.80) - 5 * Math.cos(Math.PI * 1.80) , 64 + 45 * Math.sin(Math.PI * 1.80) - 5 * Math.sin(Math.PI * 1.80));
-
-
             ctx.stroke();
-
             ctx.beginPath();
-            ctx.arc(64, 64, 45, Math.PI * -0.30, Math.PI * 0.80, false); // Second arrow, opposite direction
+            ctx.arc(64, 64, 45, Math.PI * -0.30, Math.PI * 0.80, false); 
             ctx.moveTo(64 + 45 * Math.cos(Math.PI * 0.80) - 5 * Math.sin(Math.PI * 0.80) , 64 + 45 * Math.sin(Math.PI * 0.80) + 5 * Math.cos(Math.PI * 0.80));
             ctx.lineTo(64 + 45 * Math.cos(Math.PI * 0.80) + 10 * Math.sin(Math.PI * 0.80), 64 + 45 * Math.sin(Math.PI * 0.80) - 10 * Math.cos(Math.PI * 0.80));
             ctx.lineTo(64 + 45 * Math.cos(Math.PI * 0.80) - 5 * Math.cos(Math.PI * 0.80) , 64 + 45 * Math.sin(Math.PI * 0.80) - 5 * Math.sin(Math.PI * 0.80));
             ctx.stroke();
-
             const texture = new THREE.CanvasTexture(canvas);
             const material = new THREE.SpriteMaterial({ map: texture, color: 0xffffff, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
             const sprite = new THREE.Sprite(material);
-            sprite.scale.set(0.1, 0.1, 0.1); // Adjust scale for better on-screen size
-            sprite.position.z = 0.1; // Slightly in front
-            sprite.visible = false;
-            sprite.userData.isRotationArrow = true;
-            sprite.renderOrder = 1; // Render on top
+            sprite.scale.set(0.1, 0.1, 0.1); sprite.position.z = 0.1; sprite.visible = false;
+            sprite.userData.isRotationArrow = true; sprite.renderOrder = 1; 
             return sprite;
         }
 
@@ -659,44 +589,38 @@
             if (!data || !data.mesh || !data.body) return;
             if (!rotationArrowSprite) rotationArrowSprite = createRotationArrows();
             
-            // Position arrow above the domino
             const visualYPosition = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0) + DOMINO_TALL * 0.75;
-            rotationArrowSprite.position.set(data.mesh.position.x, visualYPosition + 0.5, data.mesh.position.z); // Lift arrow a bit more
+            rotationArrowSprite.position.set(data.mesh.position.x, visualYPosition + 0.5, data.mesh.position.z); 
             rotationArrowSprite.visible = true;
             scene.add(rotationArrowSprite);
 
             const initialBodyQuaternion = data.body.quaternion.clone();
-            let totalRotationOffset = 0; // Accumulates rotation from mouse drag
+            let totalRotationOffset = 0; 
 
             function updateRotation(event) {
                 if (!rotationMode || !selectedDominoData || selectedDominoData !== data) {
                     document.removeEventListener('mousemove', updateRotation);
                     if (rotationArrowSprite) {
-                        scene.remove(rotationArrowSprite); // Clean up sprite
+                        scene.remove(rotationArrowSprite); 
                         rotationArrowSprite.visible = false;
                     }
                     return;
                 }
                 const deltaX = event.clientX - lastMousePosition.x;
-                const rotationSpeed = 0.01; // Sensitivity of rotation
+                const rotationSpeed = 0.01; 
                 totalRotationOffset += deltaX * rotationSpeed;
 
-                // Create a quaternion for the new rotation around the Y-axis
                 const rotationQuaternion = new CANNON.Quaternion();
                 rotationQuaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), totalRotationOffset);
                 
-                // Apply this rotation relative to the initial orientation
                 data.body.quaternion.copy(initialBodyQuaternion).mult(rotationQuaternion, data.body.quaternion);
-                data.body.quaternion.normalize(); // Normalize to prevent issues
+                data.body.quaternion.normalize(); 
 
-                // Update mesh quaternion immediately for visual feedback
                 data.mesh.quaternion.copy(data.body.quaternion); 
                 
-                // Update arrow position (domino itself doesn't move, only rotates here)
                 const currentBaseY = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0);
                 rotationArrowSprite.position.set(data.mesh.position.x, currentBaseY + DOMINO_TALL * 0.75 + 0.5, data.mesh.position.z);
 
-                // Update collision helper if it exists
                 if (data.userData && data.userData.collisionHelper) {
                     data.userData.collisionHelper.quaternion.copy(data.body.quaternion);
                 }
@@ -705,18 +629,14 @@
             document.addEventListener('mousemove', updateRotation, false);
         }
 
-
         function createSimulationArrowHelper(origin, directionVec, color, userDataDirection) {
-            const length = 1.0;
-            const headLength = 0.3;
-            const headWidth = 0.2;
+            const length = 1.0; const headLength = 0.3; const headWidth = 0.2;
             const arrowHelper = new THREE.ArrowHelper(directionVec.clone().normalize(), origin, length, color, headLength, headWidth);
             arrowHelper.userData.isSimulationArrow = true;
-            arrowHelper.userData.direction = userDataDirection; // e.g., 'positiveX' or 'negativeX'
+            arrowHelper.userData.direction = userDataDirection; 
             arrowHelper.userData.originalColor = color;
             arrowHelper.userData.isPulsing = false;
             arrowHelper.userData.pulseTime = 0;
-            // Make parts of arrow identifiable for raycasting
             arrowHelper.line.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
             arrowHelper.cone.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
             return arrowHelper;
@@ -726,79 +646,64 @@
             const arrowsToRemove = scene.children.filter(child => child.userData && child.userData.isSimulationArrow);
             arrowsToRemove.forEach(arrow => {
                 if (hoveredSimulationArrow === arrow) {
-                    if (arrow.cone) arrow.cone.scale.set(1, 1, 1); // Reset pulse effect
+                    if (arrow.cone) arrow.cone.scale.set(1, 1, 1); 
                     hoveredSimulationArrow = null;
                 }
-                scene.remove(arrow); // Remove from scene
-                // Dispose geometry/material if necessary, though ArrowHelper might handle some
+                scene.remove(arrow); 
             });
             if (isSelectingSimulationDirection) {
                 isSelectingSimulationDirection = false;
                 simulationTargetData = null;
                 document.body.style.cursor = 'default';
-                controls.enabled = true; // Re-enable orbit controls
+                controls.enabled = true; 
             }
         }
 
         // --- Context Menu Logic ---
         function showContextMenu(event, targetData) {
-            hideContextMenu(); // Hide any existing menu
-            selectDomino(targetData); // Select the domino that was right-clicked
+            hideContextMenu(); 
+            selectDomino(targetData); 
             contextMenu.style.left = `${event.clientX}px`;
             contextMenu.style.top = `${event.clientY}px`;
             contextMenu.style.display = 'block';
 
             document.getElementById('context-move').onclick = () => {
-                translationMode = true;
-                rotationMode = false;
-                isMoving = true; // Flag to indicate domino is being moved by mouse
-                isRotating = false;
+                translationMode = true; rotationMode = false; isMoving = true; isRotating = false;
                 lastMousePosition = { x: event.clientX, y: event.clientY };
                 showNotification("Move: Domino follows mouse. Left-click to fix. Esc to cancel.");
-                document.body.style.cursor = 'move';
-                controls.enabled = false; // Disable orbit controls during move
+                document.body.style.cursor = 'move'; controls.enabled = false; 
                 hideContextMenu();
             };
 
             document.getElementById('context-rotate').onclick = () => {
-                rotationMode = true;
-                translationMode = false;
-                isRotating = true; // Flag to indicate domino is being rotated
-                isMoving = false;
+                rotationMode = true; translationMode = false; isRotating = true; isMoving = false;
                 lastMousePosition = { x: event.clientX, y: event.clientY };
                 showNotification("Rotate: Drag mouse horizontally. Left-click to fix. Esc to cancel.");
-                document.body.style.cursor = 'ew-resize';
-                controls.enabled = false; // Disable orbit controls during rotation
-                animateRotation(targetData); // Start rotation logic
+                document.body.style.cursor = 'ew-resize'; controls.enabled = false; 
+                animateRotation(targetData); 
                 hideContextMenu();
             };
 
             document.getElementById('context-start-simulation').onclick = () => {
                 if (!targetData || !targetData.body) return;
                 hideContextMenu();
-                clearSimulationArrows(); // Clear any previous arrows
+                clearSimulationArrows(); 
 
-                const bodyPos = targetData.body.position; // Cannon.Vec3
-                const bodyQuat = targetData.body.quaternion; // Cannon.Quaternion
+                const bodyPos = targetData.body.position; 
+                const bodyQuat = targetData.body.quaternion; 
 
-                // Local X-axis vector (representing the "face" of the domino)
                 const localX = new THREE.Vector3(1, 0, 0); 
-                
-                // Transform local X to world space using domino's orientation
                 const worldNormalPositiveX = new THREE.Vector3().copy(localX).applyQuaternion(
                     new THREE.Quaternion(bodyQuat.x, bodyQuat.y, bodyQuat.z, bodyQuat.w)
                 );
                 const worldNormalNegativeX = worldNormalPositiveX.clone().negate();
-
-                // Offset for arrow placement (on the wider faces of the domino)
-                const faceOffsetDistance = DOMINO_WIDE / 2 + 0.1; // Slightly off the surface
+                const faceOffsetDistance = DOMINO_WIDE / 2 + 0.1; 
 
                 const arrowOriginPositiveX = new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z)
                     .add(worldNormalPositiveX.clone().multiplyScalar(faceOffsetDistance));
                 const arrowOriginNegativeX = new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z)
                     .add(worldNormalNegativeX.clone().multiplyScalar(faceOffsetDistance));
                 
-                // Create arrows pointing along the domino's wider faces
                 const positiveXArrow = createSimulationArrowHelper(arrowOriginPositiveX, worldNormalPositiveX, ARROW_COLOR_DEFAULT, 'positiveX');
                 scene.add(positiveXArrow);
                 const negativeXArrow = createSimulationArrowHelper(arrowOriginNegativeX, worldNormalNegativeX, ARROW_COLOR_DEFAULT, 'negativeX');
@@ -806,8 +711,8 @@
 
                 showNotification("Click a red arrow to apply impulse in that direction.");
                 isSelectingSimulationDirection = true;
-                simulationTargetData = targetData; // Store the domino to apply impulse to
-                controls.enabled = false; // Disable orbit while choosing direction
+                simulationTargetData = targetData; 
+                controls.enabled = false; 
             };
 
             document.getElementById('context-delete').onclick = () => {
@@ -819,17 +724,13 @@
         function deleteSelectedDomino() {
             if (!selectedDominoData) return;
             const dataToDelete = selectedDominoData;
-            selectDomino(null); // Deselect
+            selectDomino(null); 
 
-            // Remove visual mesh from scene
             scene.remove(dataToDelete.mesh);
-
-            // Remove physics body from world
             if (world.bodies.includes(dataToDelete.body)) {
                 world.removeBody(dataToDelete.body);
             }
 
-            // Remove collision helper and its updater
             if (dataToDelete.userData && dataToDelete.userData.collisionHelper) {
                 scene.remove(dataToDelete.userData.collisionHelper);
                 if (dataToDelete.userData.collisionHelperUpdater) {
@@ -837,19 +738,16 @@
                 }
             }
 
-            // Clean up from internal arrays
             const meshIndex = dominoes.indexOf(dataToDelete.mesh);
             if (meshIndex > -1) dominoes.splice(meshIndex, 1);
             const dataIndex = dominoData.indexOf(dataToDelete);
             if (dataIndex > -1) dominoData.splice(dataIndex, 1);
 
-            // Dispose Three.js resources
             dataToDelete.mesh.traverse((child) => {
                 if (child.isMesh) {
                     if (child.geometry) child.geometry.dispose();
                     if (child.material) {
                         if (child.material.map) child.material.map.dispose();
-                        // If material is an array
                         if (Array.isArray(child.material)) {
                             child.material.forEach(m => m.dispose());
                         } else {
@@ -861,10 +759,8 @@
             showNotification('Domino Deleted');
         }
 
-
         function hideContextMenu() {
             contextMenu.style.display = 'none';
-            // Detach event listeners to prevent memory leaks or multiple triggers
             document.getElementById('context-move').onclick = null;
             document.getElementById('context-rotate').onclick = null;
             document.getElementById('context-start-simulation').onclick = null;
@@ -872,116 +768,95 @@
         }
 
         // --- Simulation Control ---
-        function startSimulation(impulseData = null) { // impulseData: {targetBody, worldImpulse, worldApplicationPoint}
+        function startSimulation(impulseData = null) { 
             if (dominoData.length === 0 && !impulseData) {
                 showNotification("Add some dominoes first!");
                 return;
             }
             if (isSimulating) return;
 
-            clearSimulationArrows(); // Clear any direction selection arrows
+            clearSimulationArrows(); 
             isSimulating = true;
-            world.allowSleep = false; // Wake up all bodies
+            world.allowSleep = false; 
 
-            dominoData.forEach(data => data.body.wakeUp()); // Ensure all bodies are awake
+            dominoData.forEach(data => data.body.wakeUp()); 
 
             if (impulseData && impulseData.targetBody) {
                 impulseData.targetBody.wakeUp();
                 impulseData.targetBody.applyImpulse(impulseData.worldImpulse, impulseData.worldApplicationPoint);
                 showNotification("Simulation started with selected impulse!");
             } else if (selectedDominoData && selectedDominoData.body) {
-                // Default impulse if no specific one is given (e.g., spacebar start)
-                // Apply impulse to the "face" of the selected domino
                 selectedDominoData.body.wakeUp();
-                const localImpulse = new CANNON.Vec3(IMPULSE_MAGNITUDE, 0, 0); // Impulse along local X
-                // Point of application on the "top-back" edge of the wider face
+                const localImpulse = new CANNON.Vec3(IMPULSE_MAGNITUDE, 0, 0); 
                 const appPointLocal = new CANNON.Vec3(
-                    -DOMINO_WIDE / 2, // Apply to the -X face (local coordinates)
-                    DOMINO_TALL * 0.45,  // Apply somewhat high on the domino (0.5 is CoM height)
-                    0                   // Centered on the thickness axis
+                    -DOMINO_WIDE / 2, 
+                    DOMINO_TALL * 0.45,  
+                    0                   
                 ); 
-                
                 const worldImpulse = selectedDominoData.body.quaternion.vmult(localImpulse);
                 const worldApplicationPoint = selectedDominoData.body.quaternion.vmult(appPointLocal);
-                // Add body position to get world space application point from CoM
                 worldApplicationPoint.vadd(selectedDominoData.body.position, worldApplicationPoint); 
-
                 selectedDominoData.body.applyImpulse(worldImpulse, worldApplicationPoint);
                 showNotification("Simulation started with default impulse on selected domino!");
             } else if (dominoData.length > 0) {
-                // If no domino selected, but we have dominoes, maybe nudge the first one?
-                // Or require selection. For now, let's require selection or specific impulse.
                 showNotification("Select a domino or use context menu to start simulation with impulse.", true);
-                isSimulating = false; // Revert simulation state
+                isSimulating = false; 
                 world.allowSleep = true;
                 return;
             }
 
-
-            // Disable interaction modes
             translationMode = false; rotationMode = false; isAddingDomino = false;
             isMoving = false; isRotating = false;
             document.body.style.cursor = 'default';
             if (previewDomino) previewDomino.visible = false;
-            if (previewBatchGroup) scene.remove(previewBatchGroup); previewBatchGroup = null;
+            if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup = null; }
+            if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup = null; }
         }
 
         function resetSimulation() {
             isSimulating = false;
-            world.allowSleep = true; // Allow bodies to sleep again
+            world.allowSleep = true; 
             clearSimulationArrows();
             hideContextMenu();
 
-            // Cancel any ongoing interaction modes
             if (translationMode || rotationMode || isAddingDomino) {
-                translationMode = false;
-                rotationMode = false;
-                isAddingDomino = false;
-                isMoving = false;
-                isRotating = false;
+                translationMode = false; rotationMode = false; isAddingDomino = false;
+                isMoving = false; isRotating = false;
                 document.body.style.cursor = 'default';
                 if (previewDomino) previewDomino.visible = false;
                 if (previewBatchGroup) {
-                    scene.remove(previewBatchGroup);
-                    previewBatchGroup = null;
-                    previewBatchCount = 0;
+                    scene.remove(previewBatchGroup); previewBatchGroup = null; previewBatchCount = 0;
+                }
+                if (previewCircleGroup) { 
+                    scene.remove(previewCircleGroup); previewCircleGroup = null; previewCircleCount = 0;
                 }
                 if (rotationArrowSprite) scene.remove(rotationArrowSprite);
             }
-            controls.enabled = true; // Re-enable orbit controls
+            controls.enabled = true; 
 
-            // Reset each domino to its initial state
             dominoData.forEach(data => {
-                const basePos = data.initialBasePosition; // This is the snapped grid position for the bottom
+                const basePos = data.initialBasePosition; 
                 const modelPivotOffsetY = data.mesh.userData.modelPivotToBottomY || 0;
 
-                // Reset physics body
-                data.body.position.set(basePos.x, basePos.y + DOMINO_TALL / 2, basePos.z); // CoM position
+                data.body.position.set(basePos.x, basePos.y + DOMINO_TALL / 2, basePos.z); 
                 data.body.quaternion.copy(data.initialQuat);
                 data.body.velocity.set(0, 0, 0);
                 data.body.angularVelocity.set(0, 0, 0);
-                data.body.sleep(); // Put the body to sleep
+                data.body.sleep(); 
 
-                // Reset visual mesh
-                // This needs to use the corrected logic if the animate loop is fixed
-                // For now, let's assume initial upright orientation for reset simplicity
-                // The animate loop will correct it on the next frame if the fix is applied there
                 data.mesh.position.set(basePos.x, basePos.y - modelPivotOffsetY, basePos.z);
                 data.mesh.quaternion.copy(data.initialQuat);
+                setEmissive(data, 0x000000); 
 
-                setEmissive(data, 0x000000); // Clear any emissive color
-
-                // Reset collision helper
                 if (data.userData && data.userData.collisionHelper) {
                     data.userData.collisionHelper.position.copy(data.body.position);
                     data.userData.collisionHelper.quaternion.copy(data.body.quaternion);
                 }
             });
 
-            selectDomino(null); // Deselect any domino
-            hoveredDominoData = null; // Clear hover
+            selectDomino(null); 
+            hoveredDominoData = null; 
 
-            // Reset simulation arrow hover state
             if (hoveredSimulationArrow) {
                 setArrowColor(hoveredSimulationArrow, hoveredSimulationArrow.userData.originalColor);
                 if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1);
@@ -991,20 +866,17 @@
             showNotification('Simulation Reset');
         }
 
-
         function clearCanvas() {
-            resetSimulation(); // Stop simulation and reset states
-            // Remove all dominoes
+            resetSimulation(); 
             dominoData.forEach(data => {
                 scene.remove(data.mesh);
                 if (world.bodies.includes(data.body)) world.removeBody(data.body);
                 if (data.userData && data.userData.collisionHelper) {
                     scene.remove(data.userData.collisionHelper);
-                     if (data.userData.collisionHelperUpdater) { // Remove specific event listener
+                     if (data.userData.collisionHelperUpdater) { 
                         world.removeEventListener('postStep', data.userData.collisionHelperUpdater);
                     }
                 }
-                // Dispose Three.js resources
                 data.mesh.traverse((child) => {
                     if (child.isMesh) {
                         if (child.geometry) child.geometry.dispose();
@@ -1019,10 +891,8 @@
                     }
                 });
             });
-            dominoes = []; // Clear arrays
+            dominoes = []; 
             dominoData = [];
-            // Fallback: remove any remaining collision helpers not tied to dominoData (shouldn't happen ideally)
-            // scene.children = scene.children.filter(child => !child.userData || !child.userData.isCollisionHelper);
             showNotification('Canvas Cleared');
         }
 
@@ -1038,60 +908,81 @@
         function toggleOrbitControls() {
             controls.enabled = !controls.enabled;
             document.getElementById('toggle-orbit').textContent = controls.enabled ? 'Lock Camera' : 'Unlock Camera';
-            // If controls are re-enabled while in an interaction mode, cancel that mode
             if (controls.enabled && (translationMode || rotationMode || isAddingDomino || isSelectingSimulationDirection)) {
-                translationMode = false;
-                rotationMode = false;
-                isAddingDomino = false;
-                isSelectingSimulationDirection = false;
-                isMoving = false;
-                isRotating = false;
+                translationMode = false; rotationMode = false; isAddingDomino = false; isSelectingSimulationDirection = false;
+                isMoving = false; isRotating = false;
                 document.body.style.cursor = 'default';
                 if (previewDomino) previewDomino.visible = false;
-                if (previewBatchGroup) {
-                    scene.remove(previewBatchGroup);
-                    previewBatchGroup = null;
-                    previewBatchCount = 0;
-                }
+                if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup = null; previewBatchCount = 0; }
+                if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup = null; previewCircleCount = 0; }
                 clearSimulationArrows();
                 if (rotationArrowSprite) scene.remove(rotationArrowSprite);
             }
         }
 
         function onStartDragDominoTemplate(event) {
-            if (event.button !== 0) return; // Only left click
+            if (event.button !== 0) return; 
             if (isSimulating || !dominoModel) return;
+            
+            if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewBatchGroup = null; previewBatchCount = 0; }
+            if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewCircleGroup = null; previewCircleCount = 0; }
+
             isAddingDomino = true;
-            previewBatchGroup = null; // Ensure not in batch mode
-            if (!previewDomino) createPreviewDomino(); // Create if doesn't exist
-            if (previewDomino) {
-                previewDomino.visible = true;
-                previewDomino.rotation.y = 0; // Reset rotation for single domino placement
+            if (!previewDomino) createPreviewDomino(); 
+            else previewDomino.visible = true; // Ensure it's visible if already created
+            
+            if (previewDomino) { // Should always exist now
+                previewDomino.rotation.y = 0; 
             }
-            controls.enabled = false; // Disable orbit controls
+            controls.enabled = false; 
             document.body.style.cursor = 'grabbing';
             hideContextMenu();
         }
 
-        function onAddBatch() {
+        function onAddBatch() { // For Batch Line
             if (isSimulating || !dominoModel) return;
-            const numDominosStr = prompt("Enter number of dominos for the batch (2-20):", "5");
-            if (numDominosStr === null) return; // User cancelled
+            const numDominosStr = prompt("Enter number of dominos for the batch line (2-20):", "5");
+            if (numDominosStr === null) return; 
             const n = parseInt(numDominosStr);
             if (isNaN(n) || n < 2 || n > 20) {
                 showNotification("Invalid number. Please enter a value between 2 and 20.", true);
                 return;
             }
-            createPreviewBatch(n); // Create the visual batch preview
-            isAddingDomino = true; // Set flag
-            previewDomino = null; // Ensure not in single domino mode
+
+            if (previewDomino) { previewDomino.visible = false; }
+             previewDomino = null; 
+            if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewCircleGroup = null; previewCircleCount = 0; }
+            
+            createPreviewBatch(n); 
+            isAddingDomino = true; 
+            controls.enabled = false;
+            document.body.style.cursor = 'grabbing';
+            hideContextMenu();
+        }
+        
+        function onAddBatchCircle() { 
+            if (isSimulating || !dominoModel) return;
+            const numDominosStr = prompt("Enter number of pieces for the circle (20-40):", "30");
+            if (numDominosStr === null) return; 
+            const n = parseInt(numDominosStr);
+            if (isNaN(n) || n < 20 || n > 40) {
+                showNotification("Invalid number. Please enter a value between 20 and 40.", true);
+                return;
+            }
+
+            if (previewDomino) { previewDomino.visible = false; }
+            previewDomino = null;
+            if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}}); previewBatchGroup = null; previewBatchCount = 0; }
+
+            createPreviewCircle(n);
+            isAddingDomino = true;
             controls.enabled = false;
             document.body.style.cursor = 'grabbing';
             hideContextMenu();
         }
 
-        function createPreviewBatch(n) {
-            if (previewBatchGroup) { // Clear previous batch preview
+        function createPreviewBatch(n) { // For Line Batch
+            if (previewBatchGroup) { 
                 scene.remove(previewBatchGroup);
                 previewBatchGroup.traverse(child => {
                     if (child.isMesh) {
@@ -1102,10 +993,9 @@
                         }
                     }
                 });
-                previewBatchGroup = null;
             }
             previewBatchGroup = new THREE.Group();
-            const spacing = 1.0; // Spacing between dominos in the batch
+            const spacing = 1.0; 
             const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
 
             for (let i = 0; i < n; i++) {
@@ -1118,18 +1008,63 @@
                         child.userData.isDomino = true;
                     }
                 });
-                // Arrange in a line along Z-axis relative to the group's origin
                 const zPos = (i - (n - 1) / 2) * spacing; 
-                singlePreview.position.set(0, 0 - modelPivotCorrection, zPos); // Position bottom at group's y=0
-                singlePreview.rotation.y = Math.PI / 2; // Orient them sideways for a typical batch setup
+                singlePreview.position.set(0, 0 - modelPivotCorrection, zPos); 
+                singlePreview.rotation.y = Math.PI / 2; 
                 previewBatchGroup.add(singlePreview);
             }
-            // The group itself will be positioned by mouse, its y will be 0 (grid surface)
-            // The individual previews are already corrected for pivot inside the group.
             scene.add(previewBatchGroup);
             previewBatchCount = n;
         }
 
+function createPreviewCircle(numberOfPieces) { 
+    if (previewCircleGroup) {
+        scene.remove(previewCircleGroup);
+        previewCircleGroup.traverse(child => {
+            if (child.isMesh) {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+            }
+        });
+    }
+    previewCircleGroup = new THREE.Group();
+    const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
+    const N = numberOfPieces;
+    
+    // Calculate radius based on desired circle size
+    // Using the domino width for better spacing around the circle
+    const radius = (DOMINO_WIDE * N) / (2 * Math.PI);
+    const anglePerSegment = (2 * Math.PI) / N;
+    
+    for (let i = 0; i < N; i++) {
+        const angle = i * anglePerSegment; // Angle of the domino's position on the circle
+        const posX = radius * Math.cos(angle); 
+        const posZ = radius * Math.sin(angle);
+        const singlePreview = dominoModel.clone();
+        singlePreview.traverse((child) => {
+            if (child.isMesh) {
+                child.material = child.material.clone();
+                child.material.transparent = true;
+                child.material.opacity = 0.6;
+                child.userData.isDomino = true;
+            }
+        });
+        
+        // Position domino's visual bottom at (posX, 0, posZ) relative to group center
+        singlePreview.position.set(posX, 0 - modelPivotCorrection, posZ);
+        
+        // Rotate domino so its wide face is perpendicular to the radius
+        // This makes them look like hour markers on a clock
+        //singlePreview.rotation.y = angle; // Point the domino's face toward the center
+        singlePreview.rotation.y = (Math.PI/2) - angle;
+        previewCircleGroup.add(singlePreview);
+    }
+    scene.add(previewCircleGroup);
+    previewCircleCount = numberOfPieces;
+}
 
         // --- Event Listeners Setup ---
         function initEventListeners() {
@@ -1144,28 +1079,27 @@
             canvasContainer.addEventListener('mousedown', onMouseDown, false);
             canvasContainer.addEventListener('mousemove', onMouseMove, false);
             canvasContainer.addEventListener('mouseup', onMouseUp, false);
-            canvasContainer.addEventListener('contextmenu', onContextMenu, false); // For right-click
+            canvasContainer.addEventListener('contextmenu', onContextMenu, false); 
 
             window.addEventListener('keydown', onKeyDown, false);
-            // Global mousedown to hide context menu if clicked outside
             window.addEventListener('mousedown', (event) => {
                 if (contextMenu.style.display === 'block' && !contextMenu.contains(event.target)) {
                     hideContextMenu();
                 }
-            }, true); // Use capture phase to catch it early
+            }, true); 
 
             document.getElementById('domino-template').addEventListener('mousedown', onStartDragDominoTemplate);
             document.getElementById('add-batch-button').addEventListener('click', onAddBatch);
+            document.getElementById('add-batch-circle-button').addEventListener('click', onAddBatchCircle); 
             document.getElementById('reset-button').addEventListener('click', resetSimulation);
             document.getElementById('clear-button').addEventListener('click', clearCanvas);
             document.getElementById('toggle-grid').addEventListener('change', (event) => { grid.visible = event.target.checked; });
             document.getElementById('toggle-orbit').addEventListener('click', toggleOrbitControls);
             document.getElementById('reset-camera').addEventListener('click', () => {
-                controls.reset(); // Resets to initial position/target
-                camera.position.set(0, 20, 30); // Explicitly set desired reset
+                controls.reset(); 
+                camera.position.set(0, 20, 30); 
                 camera.lookAt(0, 0, 0);
-                controls.update(); // Important after manual camera changes
-                // Ensure controls are enabled if they were locked
+                controls.update(); 
                 if (!controls.enabled) {
                     controls.enabled = true;
                     document.getElementById('toggle-orbit').textContent = 'Lock Camera';
@@ -1173,7 +1107,6 @@
             });
             document.getElementById('help-button').addEventListener('click', () => { document.getElementById('modal-overlay').style.display = 'flex'; });
             document.getElementById('close-modal').addEventListener('click', () => { document.getElementById('modal-overlay').style.display = 'none'; });
-            // Close modal if clicking on the overlay itself
             document.getElementById('modal-overlay').addEventListener('click', (event) => {
                 if (event.target === document.getElementById('modal-overlay')) {
                     document.getElementById('modal-overlay').style.display = 'none';
@@ -1189,34 +1122,30 @@
         }
 
         function onMouseDown(event) {
-            if (event.button !== 0) return; // Only handle left-clicks here, right-click is for context menu
+            if (event.button !== 0) return; 
             
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
 
-            // --- Handle Simulation Arrow Click ---
             if (isSelectingSimulationDirection && simulationTargetData) {
                 const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
-                const intersectsArrows = raycaster.intersectObjects(simulationArrows, true); // true for recursive
+                const intersectsArrows = raycaster.intersectObjects(simulationArrows, true); 
 
                 if (intersectsArrows.length > 0) {
                     let clickedArrowPart = intersectsArrows[0].object;
                     let actualArrow = clickedArrowPart.userData.parentArrow || (clickedArrowPart.userData.isSimulationArrow ? clickedArrowPart : null);
                     
                     if (actualArrow && actualArrow.userData.direction) {
-                        const direction = actualArrow.userData.direction; // 'positiveX' or 'negativeX'
-                        
+                        const direction = actualArrow.userData.direction; 
                         let localImpulse = new CANNON.Vec3();
-                        // Impulse direction is based on the arrow's defined direction (local to domino)
                         if (direction === 'positiveX') localImpulse.set(IMPULSE_MAGNITUDE, 0, 0); 
                         else localImpulse.set(-IMPULSE_MAGNITUDE, 0, 0); 
                         
-                        // Application point on the face the arrow is pointing from
                         const appPointLocal = new CANNON.Vec3(
-                            direction === 'positiveX' ? -DOMINO_WIDE / 2 : DOMINO_WIDE / 2, // Opposite face for push
-                            DOMINO_TALL * 0.4, // Apply high
+                            direction === 'positiveX' ? -DOMINO_WIDE / 2 : DOMINO_WIDE / 2, 
+                            DOMINO_TALL * 0.4, 
                             0
                         );
                         
@@ -1224,62 +1153,48 @@
                         const worldApplicationPoint = simulationTargetData.body.quaternion.vmult(appPointLocal);
                         worldApplicationPoint.vadd(simulationTargetData.body.position, worldApplicationPoint);
                         
-                        // Start simulation with this specific impulse
                         startSimulation({
                             targetBody: simulationTargetData.body,
                             worldImpulse: worldImpulse,
                             worldApplicationPoint: worldApplicationPoint
                         });
-                        // clearSimulationArrows(); // startSimulation will call this
-                        return; // Action handled
+                        return; 
                     }
                 } else {
-                    // Clicked outside any arrow, cancel selection mode
                     clearSimulationArrows();
                     showNotification("Simulation direction selection canceled.");
                 }
-                return; // Either handled or selection cancelled
+                return; 
             }
 
-            // --- Handle Fixing Domino after Move/Rotate ---
-            if (isMoving && translationMode && selectedDominoData) { // Finalize move
-                isMoving = false;
-                translationMode = false;
-                document.body.style.cursor = 'default';
-                controls.enabled = true;
+            if (isMoving && translationMode && selectedDominoData) { 
+                isMoving = false; translationMode = false;
+                document.body.style.cursor = 'default'; controls.enabled = true;
                 const modelPivotOffsetY = selectedDominoData.mesh.userData.modelPivotToBottomY || 0;
-                // The mesh pivot is at selectedDominoData.mesh.position.
-                // Its visual bottom is at selectedDominoData.mesh.position.y + modelPivotOffsetY
-                // We want this visual bottom to be at the snapped grid y (which is 0)
-                const currentBasePosition = snapToGrid(selectedDominoData.mesh.position); // Snap current mesh pivot's XZ
-                currentBasePosition.y = 0; // Ensure base is on grid
+                const currentBasePosition = snapToGrid(selectedDominoData.mesh.position); 
+                currentBasePosition.y = 0; 
 
                 const collision = checkDominoCollision(currentBasePosition, selectedDominoData);
                 setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR, 1.5);
                 if (collision) {
-                    showNotification("Warning: Domino placement overlaps! Reverting to last valid.", true);
-                    // Revert to initial position before move started (more robust needed if move was multi-step)
+                    showNotification("Warning: Domino placement overlaps! Reverting.", true);
                     const oldBase = selectedDominoData.initialBasePosition;
                     selectedDominoData.mesh.position.set(oldBase.x, oldBase.y - modelPivotOffsetY, oldBase.z);
                     selectedDominoData.body.position.set(oldBase.x, oldBase.y + DOMINO_TALL / 2, oldBase.z);
                 } else {
                     showNotification("Position fixed.");
-                    selectedDominoData.initialBasePosition.copy(currentBasePosition); // Update stored initial pos
-                    // Body CoM needs to be updated based on new base position
+                    selectedDominoData.initialBasePosition.copy(currentBasePosition); 
                     selectedDominoData.body.position.set(currentBasePosition.x, currentBasePosition.y + DOMINO_TALL / 2, currentBasePosition.z);
                 }
-                 // Ensure collision helper is also updated
                 if (selectedDominoData.userData && selectedDominoData.userData.collisionHelper) {
                     selectedDominoData.userData.collisionHelper.position.copy(selectedDominoData.body.position);
                 }
                 return;
             }
-            if (isRotating && rotationMode && selectedDominoData) { // Finalize rotate
-                isRotating = false;
-                rotationMode = false;
-                document.body.style.cursor = 'default';
-                controls.enabled = true;
-                selectedDominoData.initialQuat.copy(selectedDominoData.body.quaternion); // Store new orientation
+            if (isRotating && rotationMode && selectedDominoData) { 
+                isRotating = false; rotationMode = false;
+                document.body.style.cursor = 'default'; controls.enabled = true;
+                selectedDominoData.initialQuat.copy(selectedDominoData.body.quaternion); 
                 setEmissive(selectedDominoData, SELECT_COLOR, 1.5);
                 showNotification("Rotation fixed.");
                 if (rotationArrowSprite) {
@@ -1289,93 +1204,91 @@
                 return;
             }
 
-            // --- Handle Domino Selection ---
             const intersectsDominoes = raycaster.intersectObjects(dominoes, true);
             if (intersectsDominoes.length > 0 && !isSimulating) {
                 const clickedDominoData = findDominoDataFromObject(intersectsDominoes[0].object);
                 if (clickedDominoData) {
                     selectDomino(clickedDominoData);
                 } else {
-                     if (!isSelectingSimulationDirection) selectDomino(null); // Clicked on non-domino part of scene
+                     if (!isSelectingSimulationDirection) selectDomino(null); 
                 }
             } else {
-                 if (!isSelectingSimulationDirection) selectDomino(null); // Clicked on empty space
+                 if (!isSelectingSimulationDirection) selectDomino(null); 
             }
         }
 
-
         function onMouseMove(event) {
-            if (!dominoModel) return; // Model not loaded yet
+            if (!dominoModel) return; 
 
             const currentMouse = new THREE.Vector2(
                 ((event.clientX - renderer.domElement.getBoundingClientRect().left) / renderer.domElement.width) * 2 - 1,
                 -((event.clientY - renderer.domElement.getBoundingClientRect().top) / renderer.domElement.height) * 2 + 1
             );
             raycaster.setFromCamera(currentMouse, camera);
-            const worldPos = mouseToWorld(event); // Gets intersection point with ground plane
+            const worldPos = mouseToWorld(event); 
             const modelPivotCorrection = dominoModel.userData.pivotToBottomY || 0;
 
-            // --- Handle Adding Single Domino or Batch ---
             if (isAddingDomino && worldPos) {
-                const snappedBasePos = snapToGrid(worldPos); // Snapped X, Z, with Y=0 (base on grid)
+                const snappedBasePos = snapToGrid(worldPos); 
                 
-                if (previewDomino && !previewBatchGroup) { // Adding single domino
-                    // Position preview's pivot so its visual bottom is at snappedBasePos.y
+                if (previewDomino) { 
                     previewDomino.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
                     const collision = checkDominoCollision(snappedBasePos);
                     previewDomino.traverse((child) => {
                         if (child.isMesh && child.material) {
-                            child.material.color.setHex(collision ? 0xff8888 : 0xffffff); // Reddish if collision
+                            child.material.color.setHex(collision ? 0xff8888 : 0xffffff); 
                             child.material.opacity = collision ? 0.4 : 0.6;
                         }
                     });
-                } else if (previewBatchGroup) { // Adding batch
-                    // Position the group's origin at the snapped position
-                    // Individual dominos in the group are already offset relative to group's origin
+                } else if (previewBatchGroup) { 
                     previewBatchGroup.position.copy(snappedBasePos); 
-                    // Note: individual previews in batch already have Y pivot correction
-                    // The group's Y is effectively the base Y for all of them.
-
                     let collisionInBatch = false;
+                    const tempWorldPosCheck = new THREE.Vector3(); 
                     for (let i = 0; i < previewBatchCount; i++) {
-                        // Get world position of each domino in the preview batch
-                        const tempWorldPos = new THREE.Vector3();
-                        previewBatchGroup.children[i].getWorldPosition(tempWorldPos);
-                        const dominoBasePosInWorld = snapToGrid(tempWorldPos); // Snap its world pos
+                        previewBatchGroup.children[i].getWorldPosition(tempWorldPosCheck);
+                        const dominoBasePosInWorld = snapToGrid(tempWorldPosCheck); 
                         if (checkDominoCollision(dominoBasePosInWorld)) {
-                            collisionInBatch = true;
-                            break;
+                            collisionInBatch = true; break;
                         }
                     }
-                    previewBatchGroup.traverse((child) => { // Visual feedback for whole batch
-                        if (child.isMesh && child.material && child.userData.isDomino) { // Check isDomino to avoid affecting group itself if it had material
+                    previewBatchGroup.traverse((child) => { 
+                        if (child.isMesh && child.material && child.userData.isDomino) { 
                             child.material.color.setHex(collisionInBatch ? 0xff8888 : 0xffffff);
                             child.material.opacity = collisionInBatch ? 0.4 : 0.6;
                         }
                     });
+                } else if (previewCircleGroup) { 
+                    previewCircleGroup.position.copy(snappedBasePos); 
+                    let collisionInCircle = false;
+                    const tempWorldPosCheck = new THREE.Vector3();
+                    for (const childPreview of previewCircleGroup.children) {
+                        childPreview.getWorldPosition(tempWorldPosCheck);
+                        const childSnappedBasePos = snapToGrid(tempWorldPosCheck);
+                        if (checkDominoCollision(childSnappedBasePos)) {
+                            collisionInCircle = true; break;
+                        }
+                    }
+                    previewCircleGroup.traverse((child) => {
+                        if (child.isMesh && child.material && child.userData.isDomino) {
+                            child.material.color.setHex(collisionInCircle ? 0xff8888 : 0xffffff);
+                            child.material.opacity = collisionInCircle ? 0.4 : 0.6;
+                        }
+                    });
                 }
             } 
-            // --- Handle Moving Selected Domino ---
             else if (selectedDominoData && isMoving && translationMode && worldPos) {
-                const snappedBasePos = snapToGrid(worldPos); // Target base position for the domino
-                
-                // Position mesh pivot so its visual bottom is at snappedBasePos.y
+                const snappedBasePos = snapToGrid(worldPos); 
                 selectedDominoData.mesh.position.set(snappedBasePos.x, snappedBasePos.y - modelPivotCorrection, snappedBasePos.z);
-                
-                // Update physics body's CoM based on the new base position
                 selectedDominoData.body.position.set(snappedBasePos.x, snappedBasePos.y + DOMINO_TALL / 2, snappedBasePos.z);
-                selectedDominoData.body.wakeUp(); // Keep body awake during move
+                selectedDominoData.body.wakeUp(); 
 
                 const collision = checkDominoCollision(snappedBasePos, selectedDominoData);
                 setEmissive(selectedDominoData, collision ? COLLISION_COLOR : SELECT_COLOR, 1.5);
 
-                // Update collision helper position during manual movement
                 if (selectedDominoData.userData && selectedDominoData.userData.collisionHelper) {
                     selectedDominoData.userData.collisionHelper.position.copy(selectedDominoData.body.position);
-                    // Quaternion doesn't change during translation mode
                 }
             } 
-            // --- Handle Hovering Simulation Arrows ---
             else if (isSelectingSimulationDirection) {
                 const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
                 let intersectedArrowThisFrame = null;
@@ -1390,85 +1303,114 @@
                 if (hoveredSimulationArrow && hoveredSimulationArrow !== intersectedArrowThisFrame) {
                     setArrowColor(hoveredSimulationArrow, hoveredSimulationArrow.userData.originalColor);
                     hoveredSimulationArrow.userData.isPulsing = false;
-                    if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1); // Reset pulse
+                    if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1); 
                 }
                 if (intersectedArrowThisFrame) {
                     setArrowColor(intersectedArrowThisFrame, ARROW_COLOR_HOVER);
-                    intersectedArrowThisFrame.userData.isPulsing = true; // For visual feedback in animate loop
+                    intersectedArrowThisFrame.userData.isPulsing = true; 
                     document.body.style.cursor = 'pointer';
                 } else {
                     document.body.style.cursor = 'default';
                 }
                 hoveredSimulationArrow = intersectedArrowThisFrame;
             } 
-            // --- Handle General Hover Effect ---
             else if (!isSimulating) {
                 updateHoverEffect(event);
             }
             lastMousePosition = { x: event.clientX, y: event.clientY };
         }
 
-
         function onMouseUp(event) {
-            if (event.button !== 0 || !dominoModel) return; // Only left-click, ensure model is loaded
+            if (event.button !== 0 || !dominoModel) return; 
 
             if (isAddingDomino) {
                 const worldPos = mouseToWorld(event);
                 if (worldPos) {
-                    const snappedBasePos = snapToGrid(worldPos); // Snapped X, Z, Y=0 for base
+                    const snappedFinalPos = snapToGrid(worldPos); // Snapped position for the center of the action
 
-                    if (previewDomino && !previewBatchGroup) { // Finalize adding single domino
-                        const collision = checkDominoCollision(snappedBasePos);
+                    if (previewDomino) { 
+                        const collision = checkDominoCollision(snappedFinalPos);
                         if (!collision) {
-                            createDomino(snappedBasePos, previewDomino.rotation.y); // Use preview's current rotation
+                            createDomino(snappedFinalPos, previewDomino.rotation.y); 
                         } else {
                             showNotification("Placement overlaps existing domino!", true);
                         }
                         previewDomino.visible = false;
-                    } else if (previewBatchGroup) { // Finalize adding batch
-                        // The group's position is already snappedBasePos from mousemove
+                    } else if (previewBatchGroup) { 
                         let collisionInBatch = false;
                         const finalPositionsAndRotations = [];
+                        const tempWorldPosPlace = new THREE.Vector3();
 
                         for (let i = 0; i < previewBatchCount; i++) {
                             const childPreview = previewBatchGroup.children[i];
-                            const tempWorldPos = new THREE.Vector3();
-                            childPreview.getWorldPosition(tempWorldPos); // Get world pos of this child
-                            const childSnappedBasePos = snapToGrid(tempWorldPos); // Snap its base
+                            childPreview.getWorldPosition(tempWorldPosPlace);
+                            const childSnappedBasePos = snapToGrid(tempWorldPosPlace); 
 
                             if (checkDominoCollision(childSnappedBasePos)) {
-                                collisionInBatch = true;
-                                break;
+                                collisionInBatch = true; break;
                             }
                             finalPositionsAndRotations.push({
                                 position: childSnappedBasePos,
-                                rotationY: childPreview.rotation.y // Use preview's rotation
+                                rotationY: childPreview.rotation.y 
                             });
                         }
 
                         if (!collisionInBatch) {
                             finalPositionsAndRotations.forEach(pr => createDomino(pr.position, pr.rotationY));
                         } else {
-                            showNotification("Batch placement overlaps existing dominoes!", true);
+                            showNotification("Batch line placement overlaps existing dominoes!", true);
                         }
-                        scene.remove(previewBatchGroup); // Clean up preview
-                        previewBatchGroup.traverse(child => { /* dispose geometry/material */ });
+                        scene.remove(previewBatchGroup); 
+                        previewBatchGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}});
                         previewBatchGroup = null;
                         previewBatchCount = 0;
+                    } else if (previewCircleGroup) { 
+                        const circleCenterPos = snappedFinalPos; // Snapped mouse click for the circle's center
+                        let collisionInCircle = false;
+                        const finalDominosToCreate = [];
+
+                        for (const childPreview of previewCircleGroup.children) {
+                            // childPreview.position is the calculated local offset (radius*cos, y_offset, radius*sin)
+                            // childPreview.rotation.y is the calculated orientation (angle - Math.PI / 2)
+
+                            // Calculate the target world base position for this domino's center
+                            const targetDominoBasePosition = new THREE.Vector3(
+                                circleCenterPos.x + childPreview.position.x,
+                                0, // Base Y is on the ground plane for createDomino
+                                circleCenterPos.z + childPreview.position.z
+                            );
+                            
+                            // checkDominoCollision will internally snap its input for grid-based checking
+                            if (checkDominoCollision(targetDominoBasePosition)) { 
+                                collisionInCircle = true;
+                                break;
+                            }
+                            finalDominosToCreate.push({
+                                position: targetDominoBasePosition, // Use the precise, un-snapped position for creation
+                                rotationY: childPreview.rotation.y
+                            });
+                        }
+
+                        if (!collisionInCircle) {
+                            finalDominosToCreate.forEach(d => createDomino(d.position, d.rotationY));
+                        } else {
+                            showNotification("Batch circle placement overlaps existing dominoes!", true);
+                        }
+                        scene.remove(previewCircleGroup);
+                        previewCircleGroup.traverse(c => {if(c.isMesh){if(c.material)c.material.dispose(); if(c.geometry)c.geometry.dispose();}});
+                        previewCircleGroup = null;
+                        previewCircleCount = 0;
                     }
                 }
-                // Reset adding mode
                 isAddingDomino = false;
                 document.body.style.cursor = 'default';
                 controls.enabled = true;
             }
-            // Note: Fixing domino after move/rotate is handled in onMouseDown
         }
 
-
         function onContextMenu(event) {
-            event.preventDefault(); // Prevent default browser context menu
-            if (isSimulating || isAddingDomino || isMoving || isRotating) return; // No context menu during these actions
+            event.preventDefault(); 
+            if (isSimulating || isAddingDomino || isMoving || isRotating) return; 
 
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1479,47 +1421,36 @@
             if (intersects.length > 0) {
                 const targetData = findDominoDataFromObject(intersects[0].object);
                 if (targetData) {
-                    showContextMenu(event, targetData); // Show custom context menu for this domino
+                    showContextMenu(event, targetData); 
                 }
             } else {
-                hideContextMenu(); // Clicked on empty space, hide menu
-                selectDomino(null); // Deselect any domino
+                hideContextMenu(); 
+                selectDomino(null); 
             }
         }
 
         function onKeyDown(event) {
             const key = event.key.toLowerCase();
 
-            // Handle Escape key for cancelling actions
             if (key === 'escape') {
                 hideContextMenu();
                 let modeCancelled = false;
                 if (isAddingDomino) {
                     if (previewDomino) previewDomino.visible = false;
-                    if (previewBatchGroup) {
-                        scene.remove(previewBatchGroup);
-                        previewBatchGroup = null;
-                        previewBatchCount = 0;
-                    }
+                    if (previewBatchGroup) { scene.remove(previewBatchGroup); previewBatchGroup = null; previewBatchCount = 0; }
+                    if (previewCircleGroup) { scene.remove(previewCircleGroup); previewCircleGroup = null; previewCircleCount = 0; }
                     isAddingDomino = false;
                     modeCancelled = true;
-                } else if (translationMode || rotationMode) { // Cancel move or rotate
-                    // Revert to original state before transformation started
+                } else if (translationMode || rotationMode) { 
                     if (selectedDominoData) {
                         const basePos = selectedDominoData.initialBasePosition;
                         const modelPivotOffsetY = selectedDominoData.mesh.userData.modelPivotToBottomY || 0;
-                        
                         selectedDominoData.mesh.position.set(basePos.x, basePos.y - modelPivotOffsetY, basePos.z);
                         selectedDominoData.mesh.quaternion.copy(selectedDominoData.initialQuat);
-                        
                         selectedDominoData.body.position.set(basePos.x, basePos.y + DOMINO_TALL / 2, basePos.z);
                         selectedDominoData.body.quaternion.copy(selectedDominoData.initialQuat);
-                        
-                        setEmissive(selectedDominoData, SELECT_COLOR, 1.5); // Re-select
-                        if (rotationArrowSprite) {
-                            scene.remove(rotationArrowSprite);
-                            rotationArrowSprite.visible = false;
-                        }
+                        setEmissive(selectedDominoData, SELECT_COLOR, 1.5); 
+                        if (rotationArrowSprite) { scene.remove(rotationArrowSprite); rotationArrowSprite.visible = false; }
                         if (selectedDominoData.userData && selectedDominoData.userData.collisionHelper) {
                             selectedDominoData.userData.collisionHelper.position.copy(selectedDominoData.body.position);
                             selectedDominoData.userData.collisionHelper.quaternion.copy(selectedDominoData.body.quaternion);
@@ -1531,39 +1462,34 @@
                 } else if (isSelectingSimulationDirection) {
                     clearSimulationArrows();
                     showNotification("Simulation direction selection canceled.");
-                    // No need to set modeCancelled, clearSimulationArrows handles UI reset
-                    return; // Exit early
+                    return; 
                 }
 
                 if (modeCancelled) {
                     document.body.style.cursor = 'default';
                     controls.enabled = true;
                     showNotification("Action canceled.");
-                } else if (!isSimulating) { // If nothing else to cancel, deselect
+                } else if (!isSimulating) { 
                     selectDomino(null);
                 }
-                return; // Escape handled
+                return; 
             }
 
-            // Shortcuts for selected domino (if not in other modes)
             if (selectedDominoData && !translationMode && !rotationMode && !isSelectingSimulationDirection && !isSimulating) {
                 switch (key) {
-                    case 'delete':
-                    case 'backspace':
-                        deleteSelectedDomino();
-                        break;
-                    case 't': // Translate
-                        document.getElementById('context-move').onclick = () => { // Simulate context menu click
+                    case 'delete': case 'backspace': deleteSelectedDomino(); break;
+                    case 't': 
+                        document.getElementById('context-move').onclick = () => { 
                             translationMode = true; rotationMode = false; isMoving = true; isRotating = false;
-                            lastMousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 }; // Center mouse for start
+                            lastMousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 }; 
                             showNotification("Move: Domino follows mouse. Left-click to fix. Esc to cancel.");
                             document.body.style.cursor = 'move'; controls.enabled = false; hideContextMenu();
                         };
-                        document.getElementById('context-move').onclick(); // Trigger it
-                        document.getElementById('context-move').onclick = null; // Clean up
+                        document.getElementById('context-move').onclick(); 
+                        document.getElementById('context-move').onclick = null; 
                         break;
-                    case 'r': // Rotate
-                         document.getElementById('context-rotate').onclick = () => { // Simulate context menu click
+                    case 'r': 
+                         document.getElementById('context-rotate').onclick = () => { 
                             rotationMode = true; translationMode = false; isRotating = true; isMoving = false;
                             lastMousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
                             showNotification("Rotate: Drag mouse horizontally. Left-click to fix. Esc to cancel.");
@@ -1576,23 +1502,22 @@
                 }
             }
 
-            // Global shortcuts
             switch (key) {
-                case 'g': // Toggle Grid
-                    if (!translationMode && !rotationMode && !isAddingDomino && !isSimulating) { // Prevent toggle during interactions
+                case 'g': 
+                    if (!translationMode && !rotationMode && !isAddingDomino && !isSimulating) { 
                         const cb = document.getElementById('toggle-grid');
                         cb.checked = !cb.checked;
                         grid.visible = cb.checked;
                     }
                     break;
-                case ' ': // Spacebar to start simulation
+                case ' ': 
                     if (!isSimulating && !translationMode && !rotationMode && !isAddingDomino && !isSelectingSimulationDirection) {
                         if (dominoData.length > 0) {
-                           startSimulation(); // Will use selected domino or prompt if none
+                           startSimulation(); 
                         } else {
                             showNotification("Add dominoes before starting simulation.", true);
                         }
-                        event.preventDefault(); // Prevent spacebar from scrolling page
+                        event.preventDefault(); 
                     }
                     break;
             }
@@ -1600,71 +1525,43 @@
 
         // --- Animation Loop ---
         const clock = new THREE.Clock();
-        const pulseSpeed = 5; // For pulsing simulation arrows
+        const pulseSpeed = 5; 
         const pulseMagnitude = 0.1;
-        const fixedTimeStep = 1 / 60; // Increased physics simulation frequency
-        const maxSubSteps = 10;      // Max physics substeps per frame
+        const fixedTimeStep = 1 / 60; 
+        const maxSubSteps = 10;      
 
         function animate() {
             requestAnimationFrame(animate);
-            const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap delta time
+            const deltaTime = Math.min(clock.getDelta(), 0.1); 
 
             if (isSimulating) {
                 world.step(fixedTimeStep, deltaTime, maxSubSteps);
             }
 
-            // Pulse hovered simulation arrow
             if (hoveredSimulationArrow && hoveredSimulationArrow.userData.isPulsing) {
                 hoveredSimulationArrow.userData.pulseTime += deltaTime * pulseSpeed;
                 const scale = 1 + Math.sin(hoveredSimulationArrow.userData.pulseTime) * pulseMagnitude;
                 if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(scale, scale, scale);
             }
             
-            // Update visual dominoes from physics bodies
             dominoData.forEach((data) => {
                 const body = data.body;
                 const mesh = data.mesh;
                 const modelPivotToBottomY_offset = mesh.userData.modelPivotToBottomY || 0;
-
-                // Sync quaternion
                 mesh.quaternion.copy(body.quaternion);
-
-                // ***** CORRECTED POSITIONING LOGIC *****
-                // The goal is to position the mesh's pivot point such that its visual bottom
-                // aligns with the physics body's conceptual bottom, considering orientation.
-
-                // 1. Vector from physics body's CoM to its conceptual bottom in its local space:
-                //    (0, -DOMINO_TALL / 2, 0)
-                // 2. Vector from mesh's pivot to its visual bottom in its local space:
-                //    (0, modelPivotToBottomY_offset, 0)
-                //    (modelPivotToBottomY_offset is scaledBox.min.y, e.g., -H/2 if pivot at center, 0 if pivot at bottom)
-
-                // We want: mesh_pivot_world + R * v_mesh_bottom_local = body_CoM_world + R * v_body_bottom_local
-                // So: mesh_pivot_world = body_CoM_world + R * (v_body_bottom_local - v_mesh_bottom_local)
-                
-                // Calculate (v_body_bottom_local - v_mesh_bottom_local)
-                const localOffsetToPivot = new THREE.Vector3(
-                    0,
-                    (-DOMINO_TALL / 2) - modelPivotToBottomY_offset,
-                    0
-                );
-
-                // Rotate this local offset by the current orientation
-                const worldOffsetToPivot = localOffsetToPivot.clone().applyQuaternion(mesh.quaternion); // or body.quaternion
-
-                // Set mesh pivot position: body's CoM + rotated offset
+                const localOffsetToPivot = new THREE.Vector3(0, (-DOMINO_TALL / 2) - modelPivotToBottomY_offset, 0);
+                const worldOffsetToPivot = localOffsetToPivot.clone().applyQuaternion(mesh.quaternion); 
                 mesh.position.copy(body.position).add(worldOffsetToPivot);
             });
 
-            controls.update(); // If damping enabled
+            controls.update(); 
             renderer.render(scene, camera);
         }
 
         // --- Initialization ---
         console.log("Initializing Domino Simulator...");
         initEventListeners();
-        animate(); // Start the animation loop
+        animate(); 
         console.log("Initialization Complete.");
     </script>
-</body>
 </html>
