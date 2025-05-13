@@ -85,6 +85,7 @@
             margin: 5px 0;
             padding: 0;
         }
+		#file-input { display: none; }
     </style>
 </head>
 <body>
@@ -131,6 +132,11 @@
             <div class="toolbar-button clear" id="clear-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19M8,9H16V19H8V9M15.5,4L14.5,3H9.5L8.5,4H5V6H19V4H15.5Z" fill="#f44336"/></svg></div><span>Clear Canvas</span></div>
         </div>
         <div class="toolbar-section">
+            <div class="toolbar-section-title">File Operations</div>
+            <div class="toolbar-button load" id="load-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 12H15.5L13 9.5L10.5 12H7L10 15L13 18L16 15H19V12ZM5 3H19C20.1 3 21 3.9 21 5V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V5C3 3.9 3.9 3 5 3Z" fill="#2196f3"/></svg></div><span>Load Scene</span></div>
+            <div class="toolbar-button save" id="save-button"><div class="toolbar-button-icon"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM10 16L7 13L10 10H7V8H13V14H10V16ZM17 16H14V14H17V16Z" fill="#9c27b0"/></svg></div><span>Save Scene</span></div>
+        </div>
+        <div class="toolbar-section">		
             <div class="toolbar-section-title">Display</div>
             <div class="checkbox-container"><input type="checkbox" id="toggle-grid" checked><label for="toggle-grid">Show Grid</label></div>
         </div>
@@ -168,6 +174,8 @@
                 <li><strong>Start Simulation (Space):</strong> Press Spacebar or use context menu arrows</li>
                 <li><strong>Reset:</strong> Click the reset button</li>
                 <li><strong>Clear:</strong> Remove all dominoes</li>
+				<li><strong>Load Scene:</strong> Click "Load Scene" to upload an XML file</li>
+                <li><strong>Save Scene:</strong> Click "Save Scene" to download the scene as an XML file</li>
                 <li><strong>Toggle Grid (G):</strong> Checkbox or press G</li>
                 <li><strong>Context Menu:</strong> Right-click on a domino</li>
             </ul>
@@ -181,6 +189,7 @@
             </ul>
         </div>
     </div>
+    <input type="file" id="file-input" accept=".xml" style="display: none;" />
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
@@ -373,6 +382,117 @@
             }
         );
 		
+    // --- Save/Load Functionality ---
+function saveSceneToXML() {
+        if (dominoData.length === 0) {
+            showNotification("No dominoes to save!", true);
+            return;
+        }
+
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        xml += '<DominoScene>\n';
+        dominoData.forEach((data, index) => {
+            const pos = data.initialBasePosition;
+            const quat = data.mesh.quaternion; // Get the quaternion directly
+
+            // Log the quaternion components for debugging if needed
+            // console.log(`Saving Domino ${index}: Position ${pos.x}, ${pos.y}, ${pos.z}, Quaternion x:${quat.x}, y:${quat.y}, z:${quat.z}, w:${quat.w}`);
+
+            xml += `  <Domino id="${index}">\n`;
+            xml += `    <Position x="${pos.x}" y="${pos.y}" z="${pos.z}" />\n`;
+            // Save quaternion components instead of Euler Y
+            xml += `    <Quaternion x="${quat.x}" y="${quat.y}" z="${quat.z}" w="${quat.w}" />\n`;
+            xml += `  </Domino>\n`;
+        });
+        xml += '</DominoScene>';
+
+        const blob = new Blob([xml], { type: 'text/xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'domino_scene.xml';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showNotification("Scene saved as domino_scene.xml");
+    }
+
+function loadSceneFromXML(event) {
+        const file = event.target.files[0];
+        if (!file) {
+            showNotification("No file selected.", true);
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(text, 'text/xml');
+                const errorNode = xmlDoc.querySelector('parsererror');
+                if (errorNode) {
+                    showNotification("Error parsing XML file.", true);
+                    return;
+                }
+
+                clearCanvas();
+
+                const dominoNodes = xmlDoc.getElementsByTagName('Domino');
+                for (let i = 0; i < dominoNodes.length; i++) {
+                    const dominoNode = dominoNodes[i]; // Renamed to avoid conflict
+                    const posNode = dominoNode.getElementsByTagName('Position')[0];
+                    const quatNode = dominoNode.getElementsByTagName('Quaternion')[0]; // Get Quaternion node
+
+                    const pos = new THREE.Vector3(
+                        parseFloat(posNode.getAttribute('x')),
+                        parseFloat(posNode.getAttribute('y')),
+                        parseFloat(posNode.getAttribute('z'))
+                    );
+
+                    // Read quaternion components
+                    const qx = parseFloat(quatNode.getAttribute('x'));
+                    const qy = parseFloat(quatNode.getAttribute('y'));
+                    const qz = parseFloat(quatNode.getAttribute('z'));
+                    const qw = parseFloat(quatNode.getAttribute('w'));
+                    const loadedQuaternion = new THREE.Quaternion(qx, qy, qz, qw);
+
+                    // Log the loaded quaternion for debugging if needed
+                    // console.log(`Loading Domino ${i}: Position ${pos.x}, ${pos.y}, ${pos.z}, Quaternion x:${qx}, y:${qy}, z:${qz}, w:${qw}`);
+
+                    // Create domino with a default rotation (e.g., 0 for rotationY)
+                    // The actual rotation will be set from the loaded quaternion.
+                    const newDomino = createDomino(pos, 0); 
+
+                    if (newDomino) {
+                        // Apply the loaded quaternion directly
+                        newDomino.mesh.quaternion.copy(loadedQuaternion);
+                        newDomino.body.quaternion.copy(loadedQuaternion);
+                        newDomino.body.wakeUp(); 
+                        newDomino.initialQuat.copy(loadedQuaternion); // Important: update initialQuat
+
+                        // Optional: Verify applied quaternion by converting to Euler for logging if desired
+                        // const appliedEuler = new THREE.Euler().setFromQuaternion(newDomino.mesh.quaternion, 'XYZ');
+                        // console.log(`Applied Rotation Y for Domino ${i} (from Quat): ${(appliedEuler.y * 180 / Math.PI).toFixed(2)} degrees`);
+                    }
+                }
+
+                showNotification(`Loaded ${dominoNodes.length} dominoes.`);
+            } catch (err) {
+                showNotification("Error loading scene: " + err.message, true);
+                console.error("Error loading scene:", err);
+            }
+        };
+        reader.onerror = function() {
+            showNotification("Error reading file.", true);
+        };
+        reader.readAsText(file);
+
+        document.getElementById('file-input').value = '';
+    }
+	
 function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
     if (previewSpiralGroup) {
         scene.remove(previewSpiralGroup);
@@ -506,59 +626,65 @@ function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
             scene.add(previewDomino);
         }
 
-        function createDomino(basePosition, rotationY = 0) {
-            if (!dominoModel) {
-                showNotification("Error: Domino model not ready.", true);
-                return null;
-            }
-
-            const dominoMesh = dominoModel.clone();
-            dominoMesh.userData.isDomino = true;
-            const modelPivotToBottomY_offset = dominoModel.userData.pivotToBottomY || 0;
-            dominoMesh.userData.modelPivotToBottomY = modelPivotToBottomY_offset;
-            dominoMesh.position.set(basePosition.x, basePosition.y - modelPivotToBottomY_offset, basePosition.z);
-            dominoMesh.rotation.y = rotationY;
-
-            dominoMesh.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    child.material = child.material.clone(); 
-                    child.userData.isDominoPart = true;
-                }
-            });
-            scene.add(dominoMesh);
-
-            const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_THICK / 2, DOMINO_TALL / 2, DOMINO_WIDE / 2));
-            const bodyCoMPosition = new CANNON.Vec3(basePosition.x, basePosition.y + DOMINO_TALL / 2, basePosition.z);
-            const dominoBody = new CANNON.Body({
-                mass: 1.0,
-                position: bodyCoMPosition,
-                shape: shape,
-                material: dominoPhysMaterial,
-                linearDamping: 0.15,
-                angularDamping: 0.4,
-                collisionResponse: true
-            });
-
-            dominoBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
-            dominoBody.allowSleep = true;
-            dominoBody.sleepSpeedLimit = 0.5;
-            dominoBody.sleepTimeLimit = 1.0;
-
-            dominoMesh.userData.body = dominoBody;
-            dominoBody.userData = { mesh: dominoMesh }; 
-
-            const data = {
-                mesh: dominoMesh,
-                body: dominoBody,
-                initialBasePosition: basePosition.clone(), 
-                initialQuat: dominoBody.quaternion.clone() 
-            };
-
-            dominoData.push(data);
-            dominoes.push(dominoMesh); 
-            world.addBody(dominoBody);
-            return data;
+    // --- Domino Creation ---
+    function createDomino(basePosition, rotationY = 0) {
+        if (!dominoModel) {
+            showNotification("Error: Domino model not ready.", true);
+            return null;
         }
+
+        const dominoMesh = dominoModel.clone();
+        dominoMesh.userData.isDomino = true;
+        const modelPivotToBottomY_offset = dominoModel.userData.pivotToBottomY || 0;
+        dominoMesh.userData.modelPivotToBottomY = modelPivotToBottomY_offset;
+        dominoMesh.position.set(basePosition.x, basePosition.y - modelPivotToBottomY_offset, basePosition.z);
+
+        // Set rotation using Euler to preserve sign
+        const euler = new THREE.Euler(0, rotationY, 0, 'XYZ');
+        dominoMesh.quaternion.setFromEuler(euler);
+
+        dominoMesh.traverse((child) => {
+            if (child.isMesh && child.material) {
+                child.material = child.material.clone(); 
+                child.userData.isDominoPart = true;
+            }
+        });
+        scene.add(dominoMesh);
+
+        const shape = new CANNON.Box(new CANNON.Vec3(DOMINO_THICK / 2, DOMINO_TALL / 2, DOMINO_WIDE / 2));
+        const bodyCoMPosition = new CANNON.Vec3(basePosition.x, basePosition.y + DOMINO_TALL / 2, basePosition.z);
+        const dominoBody = new CANNON.Body({
+            mass: 1.0,
+            position: bodyCoMPosition,
+            shape: shape,
+            material: dominoPhysMaterial,
+            linearDamping: 0.15,
+            angularDamping: 0.4,
+            collisionResponse: true
+        });
+
+        // Apply the same initial rotation to the physics body
+        dominoBody.quaternion.copy(dominoMesh.quaternion);
+
+        dominoBody.allowSleep = true;
+        dominoBody.sleepSpeedLimit = 0.5;
+        dominoBody.sleepTimeLimit = 1.0;
+
+        dominoMesh.userData.body = dominoBody;
+        dominoBody.userData = { mesh: dominoMesh }; 
+
+        const data = {
+            mesh: dominoMesh,
+            body: dominoBody,
+            initialBasePosition: basePosition.clone(), 
+            initialQuat: new THREE.Quaternion().copy(dominoMesh.quaternion) 
+        };
+
+        dominoData.push(data);
+        dominoes.push(dominoMesh); 
+        world.addBody(dominoBody);
+        return data;
+    }
         
         // --- Collision & Placement ---
         function snapToGrid(position) {
@@ -681,74 +807,158 @@ function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
             hideContextMenu();
         }
 
-        function createRotationArrows() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 8; ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.arc(64, 64, 45, Math.PI * 0.70, Math.PI * 1.80, false); 
-            ctx.moveTo(64 + 45 * Math.cos(Math.PI * 1.80) - 5 * Math.sin(Math.PI * 1.80) , 64 + 45 * Math.sin(Math.PI * 1.80) + 5 * Math.cos(Math.PI * 1.80));
-            ctx.lineTo(64 + 45 * Math.cos(Math.PI * 1.80) + 10 * Math.sin(Math.PI * 1.80), 64 + 45 * Math.sin(Math.PI * 1.80) - 10 * Math.cos(Math.PI * 1.80));
-            ctx.lineTo(64 + 45 * Math.cos(Math.PI * 1.80) - 5 * Math.cos(Math.PI * 1.80) , 64 + 45 * Math.sin(Math.PI * 1.80) - 5 * Math.sin(Math.PI * 1.80));
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(64, 64, 45, Math.PI * -0.30, Math.PI * 0.80, false); 
-            ctx.moveTo(64 + 45 * Math.cos(Math.PI * 0.80) - 5 * Math.sin(Math.PI * 0.80) , 64 + 45 * Math.sin(Math.PI * 0.80) + 5 * Math.cos(Math.PI * 0.80));
-            ctx.lineTo(64 + 45 * Math.cos(Math.PI * 0.80) + 10 * Math.sin(Math.PI * 0.80), 64 + 45 * Math.sin(Math.PI * 0.80) - 10 * Math.cos(Math.PI * 0.80));
-            ctx.lineTo(64 + 45 * Math.cos(Math.PI * 0.80) - 5 * Math.cos(Math.PI * 0.80) , 64 + 45 * Math.sin(Math.PI * 0.80) - 5 * Math.sin(Math.PI * 0.80));
-            ctx.stroke();
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ map: texture, color: 0xffffff, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
-            const sprite = new THREE.Sprite(material);
-            sprite.scale.set(0.1, 0.1, 0.1); sprite.position.z = 0.1; sprite.visible = false;
-            sprite.userData.isRotationArrow = true; sprite.renderOrder = 1; 
-            return sprite;
-        }
 
-        function animateRotation(data) {
-            if (!data || !data.mesh || !data.body) return;
-            if (!rotationArrowSprite) rotationArrowSprite = createRotationArrows();
-            
-            const visualYPosition = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0) + DOMINO_TALL * 0.75;
-            rotationArrowSprite.position.set(data.mesh.position.x, visualYPosition + 0.5, data.mesh.position.z); 
-            rotationArrowSprite.visible = true;
-            scene.add(rotationArrowSprite);
 
-            const initialBodyQuaternion = data.body.quaternion.clone();
-            let totalRotationOffset = 0; 
 
-            function updateRotation(event) {
-                if (!rotationMode || !selectedDominoData || selectedDominoData !== data) {
-                    document.removeEventListener('mousemove', updateRotation);
-                    if (rotationArrowSprite) {
-                        scene.remove(rotationArrowSprite); 
-                        rotationArrowSprite.visible = false;
-                    }
-                    return;
-                }
-                const deltaX = event.clientX - lastMousePosition.x;
-                const rotationSpeed = 0.01; 
-                totalRotationOffset += deltaX * rotationSpeed;
+function createRotationArrows() {
+    const canvas = document.createElement('canvas');
+    const canvasSize = 128; // Use a variable for size
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+    const ctx = canvas.getContext('2d');
 
-                const rotationQuaternion = new CANNON.Quaternion();
-                rotationQuaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), totalRotationOffset);
-                
-                data.body.quaternion.copy(initialBodyQuaternion).mult(rotationQuaternion, data.body.quaternion);
-                data.body.quaternion.normalize(); 
+    // --- Canvas Drawing Code (exactly as you provided) ---
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Style for the arrows
+    ctx.strokeStyle = '#ff0000'; // Red color
+    ctx.fillStyle = '#ff0000';   // Red color for filled arrowheads
+    ctx.lineWidth = 8;         // Line thickness for the arc
+    ctx.lineCap = 'round';     // Rounded ends for the arc stroke
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = canvasSize * 0.3125; // e.g., 40 for 128px canvas
+    const arrowLength = canvasSize * 0.125; // e.g., 16 for 128px canvas
+    const arrowheadAngle = Math.PI / 6; // Angle of the arrowhead wings (30 degrees)
+    const startAngle = Math.PI * 0.25; // 45 degrees
+    const endAngle = Math.PI * 1.75;   // 315 degrees (or -45 degrees)
+    ctx.save();
+    ctx.translate(centerX, centerY); // Move origin to center for rotation
+    ctx.rotate(-Math.PI / 2);        // Rotate context (affects drawing)
+    ctx.translate(-centerX, -centerY); // Move origin back
+    ctx.beginPath(); // Draw the partial circle arc
+    ctx.arc(centerX, centerY, radius, startAngle, endAngle, false);
+    ctx.stroke(); // Draw the arc line
+    function drawArrowhead(ctx, x, y, direction, length, angle) { // Helper function
+        ctx.save(); ctx.beginPath(); ctx.translate(x, y); ctx.rotate(direction);
+        ctx.moveTo(0, 0);
+        const wingX = -length; const wingY1 = length * Math.tan(angle / 2); const wingY2 = -length * Math.tan(angle / 2);
+        ctx.lineTo(wingX, wingY1); ctx.lineTo(wingX, wingY2); ctx.closePath();
+        ctx.fill(); ctx.restore();
+    }
+    // Calculate points and directions (with your tweaks)
+    const startX = centerX + radius * Math.cos(startAngle - 0.2);
+    const startY = centerY + radius * Math.sin(startAngle - 0.2);
+    const directionStart = startAngle + Math.PI / 2 + Math.PI;
+    const endX = centerX + radius * Math.cos(endAngle + 0.2);
+    const endY = centerY + radius * Math.sin(endAngle + 0.2);
+    const directionEnd = endAngle + Math.PI / 2;
+    // Draw the arrowheads
+    drawArrowhead(ctx, startX, startY, directionStart, arrowLength, arrowheadAngle * 2);
+    drawArrowhead(ctx, endX, endY, directionEnd, arrowLength, arrowheadAngle * 2);
+    ctx.restore(); // Restore context state
+    // --- End of Canvas Drawing Code ---
 
-                data.mesh.quaternion.copy(data.body.quaternion); 
-                
-                const currentBaseY = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0);
-                rotationArrowSprite.position.set(data.mesh.position.x, currentBaseY + DOMINO_TALL * 0.75 + 0.5, data.mesh.position.z);
 
-                if (data.userData && data.userData.collisionHelper) {
-                    data.userData.collisionHelper.quaternion.copy(data.body.quaternion);
-                }
-                lastMousePosition = { x: event.clientX, y: event.clientY };
+    // --- Create THREE.js Texture (same as before) ---
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true; // Good practice after canvas drawing
+
+    // --- *** CHANGE: Create a Mesh instead of a Sprite *** ---
+
+    // 1. Define the size of the plane in your 3D world units.
+    //    Adjust this size to match how big you want the arrow circle to be on the ground.
+    const planeSize = 3; // Example: 0.5x0.5 units in the world
+
+    // 2. Create the Plane Geometry
+    const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+
+    // 3. Create the Material using the texture
+    const material = new THREE.MeshBasicMaterial({ // Use MeshBasicMaterial (unlit)
+        map: texture,          // The texture from the canvas
+        color: 0xffffff,       // Use texture's color
+        transparent: true,     // Allow transparency
+        alphaTest: 0.1,        // Optimization for transparent edges
+        depthTest: false,      // Optional: Render on top of other objects
+        depthWrite: false,     // Optional: Don't hide objects behind it
+        side: THREE.DoubleSide // Make visible from both sides (e.g., if camera goes below grid)
+        // Note: sizeAttenuation is a SpriteMaterial property, not used here.
+    });
+
+    // 4. Create the Mesh object
+    const mesh = new THREE.Mesh(geometry, material);
+
+    // 5. *** Rotate the Mesh to be parallel to the ground grid ***
+    //    This assumes your ground grid lies on the XZ plane (Y is up).
+    //    Rotate it -90 degrees around the X-axis.
+    mesh.rotation.x = -Math.PI / 2;
+
+    // 6. Set Position (relative to the domino or world origin)
+    //    Position it slightly above the ground (Y=0) to prevent flickering (z-fighting).
+    mesh.position.y = 0.01; // Small offset in the 'up' direction
+    // You will typically set mesh.position.x and mesh.position.z later
+    // to place it next to the domino being rotated.
+
+    // 7. Set other properties as needed
+    mesh.visible = false;
+    mesh.userData.isRotationArrow = true; // Keep your flag
+    mesh.renderOrder = 1;               // Keep render order if needed
+
+    // 8. Return the Mesh
+    return mesh;
+}
+
+function animateRotation(data) {
+    if (!data || !data.mesh || !data.body || !scene || typeof DOMINO_TALL === 'undefined') return;
+    if (!rotationArrowSprite) rotationArrowSprite = createRotationArrows();
+
+    const visualYPosition = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0) + DOMINO_TALL * 0.75;
+    rotationArrowSprite.position.set(data.mesh.position.x, visualYPosition + 0.5, data.mesh.position.z);
+    rotationArrowSprite.rotation.x = -Math.PI / 2; // Match previous version
+    rotationArrowSprite.visible = true;
+    scene.add(rotationArrowSprite);
+
+    const initialBodyQuaternion = data.body.quaternion.clone();
+    let totalRotationOffset = 0;
+    let lastMousePosition = { x: 0, y: 0 }; // Initialize to avoid NaN
+
+    function updateRotation(event) {
+        if (!rotationMode || !selectedDominoData || selectedDominoData !== data) {
+            document.removeEventListener('mousemove', updateRotation);
+            if (rotationArrowSprite) {
+                scene.remove(rotationArrowSprite);
+                rotationArrowSprite.visible = false;
+                // Add disposal if needed
+                if (rotationArrowSprite.material.map) rotationArrowSprite.material.map.dispose();
+                rotationArrowSprite.material.dispose();
+                rotationArrowSprite.geometry.dispose();
             }
-            document.addEventListener('mousemove', updateRotation, false);
+            return;
         }
+        const deltaX = event.clientX - lastMousePosition.x;
+        const rotationSpeed = 0.01;
+        totalRotationOffset += deltaX * rotationSpeed;
+        const maxAngle = Math.PI / 4; // Add angle constraint
+        totalRotationOffset = Math.max(-maxAngle, Math.min(maxAngle, totalRotationOffset));
+
+        const rotationQuaternion = new CANNON.Quaternion();
+        rotationQuaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), totalRotationOffset);
+        data.body.quaternion.copy(initialBodyQuaternion).mult(rotationQuaternion, data.body.quaternion);
+        data.body.quaternion.normalize();
+
+        data.mesh.quaternion.copy(data.body.quaternion);
+
+        const currentBaseY = data.mesh.position.y + (data.mesh.userData.modelPivotToBottomY || 0);
+        rotationArrowSprite.position.set(data.mesh.position.x, currentBaseY + DOMINO_TALL * 0.75 + 0.5, data.mesh.position.z);
+
+        if (data.userData && data.userData.collisionHelper) {
+            data.userData.collisionHelper.quaternion.copy(data.body.quaternion);
+        }
+        lastMousePosition = { x: event.clientX, y: event.clientY };
+    }
+    document.addEventListener('mousemove', updateRotation, false);
+    rotationMode = true;
+}
 
         function createSimulationArrowHelper(origin, directionVec, color, userDataDirection) {
             const length = 1.0; const headLength = 0.3; const headWidth = 0.2;
@@ -796,14 +1006,15 @@ function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
                 hideContextMenu();
             };
 
-            document.getElementById('context-rotate').onclick = () => {
-                rotationMode = true; translationMode = false; isRotating = true; isMoving = false;
-                lastMousePosition = { x: event.clientX, y: event.clientY };
-                showNotification("Rotate: Drag mouse horizontally. Left-click to fix. Esc to cancel.");
-                document.body.style.cursor = 'ew-resize'; controls.enabled = false; 
-                animateRotation(targetData); 
-                hideContextMenu();
-            };
+document.getElementById('context-rotate').onclick = () => {
+    console.log("Rotate option clicked");
+    rotationMode = true; translationMode = false; isRotating = true; isMoving = false;
+    lastMousePosition = { x: event.clientX, y: event.clientY };
+    showNotification("Rotate: Drag mouse horizontally. Left-click to fix. Esc to cancel.");
+    document.body.style.cursor = 'ew-resize'; controls.enabled = false;
+    animateRotation(targetData);
+    hideContextMenu();
+};
 
             document.getElementById('context-start-simulation').onclick = () => {
                 if (!targetData || !targetData.body) return;
@@ -1014,6 +1225,8 @@ function createPreviewSpiral(numberOfPieces, spiralGrowthRate = 0.6) {
             });
             dominoes = []; 
             dominoData = [];
+			selectDomino(null); 
+            hoveredDominoData = null; 
             showNotification('Canvas Cleared');
         }
 
@@ -1215,6 +1428,25 @@ function createPreviewCircle(numberOfPieces) {
 			document.getElementById('add-batch-spiral-button').addEventListener('click', onAddBatchSpiral);
             document.getElementById('reset-button').addEventListener('click', resetSimulation);
             document.getElementById('clear-button').addEventListener('click', clearCanvas);
+			document.getElementById('save-button').addEventListener('click', saveSceneToXML);
+        document.getElementById('load-button').addEventListener('click', () => {
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                showNotification("Triggering file input...");
+                fileInput.click(); // Programmatically trigger the file input
+            } else {
+                showNotification("Error: File input element not found!", true);
+            }
+        });
+
+        // Ensure the file input change event is properly bound (already in place, but verifying)
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.addEventListener('change', loadSceneFromXML);
+        } else {
+            console.error("File input element (#file-input) not found in DOM.");
+            showNotification("Error: File input not initialized!", true);
+        }
             document.getElementById('toggle-grid').addEventListener('change', (event) => { grid.visible = event.target.checked; });
             document.getElementById('toggle-orbit').addEventListener('click', toggleOrbitControls);
             document.getElementById('reset-camera').addEventListener('click', () => {
@@ -1570,6 +1802,7 @@ function createPreviewCircle(numberOfPieces) {
 
         function onContextMenu(event) {
             event.preventDefault(); 
+			console.log("Context menu triggered");
             if (isSimulating || isAddingDomino || isMoving || isRotating) return; 
 
             const rect = renderer.domElement.getBoundingClientRect();
