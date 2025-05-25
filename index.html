@@ -215,7 +215,8 @@
         const IMPULSE_MAGNITUDE = 3.5; // Adjusted for potentially heavier bot interaction if needed
         const ARROW_COLOR_DEFAULT = 0xff0000;
         const ARROW_COLOR_HOVER = 0x0077ff;
-        const BOT_URL = 'https://vita2048.github.io/DominoSimulator/TeslaBotPushYUpZForward.fbx';
+        const BOT_URL = 'https://vita2048.github.io/DominoSimulator/TeslaBotWalkOnSportPushYUpZForward1.fbx';
+		
         const BOT_ORIGINAL_HEIGHT = 2.64047; // meters
 
         // --- Scene Setup ---
@@ -343,6 +344,7 @@
 
         // Bot-specific state variables
         let teslaBotModel = null;
+		let teslaBotWalkingModel = null;
         let botAnimationMixer = null;
         let botPushAction = null;
         let isBotAnimatingPush = false; // True when bot is actively playing its push animation
@@ -351,6 +353,7 @@
         let isSelectingBotSimulationDirection = false; // True when choosing arrow for bot push
 		let botBaseOffset;
 		let botBBox=null;
+		
 
         // --- Load GLB Model (Domino) ---
         const gltfLoader = new THREE.GLTFLoader(); // Renamed from 'loader' to avoid conflict
@@ -402,14 +405,8 @@ fbxLoader.load(
     BOT_URL,
     (object) => {
         teslaBotModel = object;
-        
-        teslaBotModel.scale.set(0.012, 0.012, 0.013); // Keep your original scaling
-        teslaBotModel.scale.set(0.012, 0.012, 0.013); // Keep your original scaling
-
-        // Ensure no initial problematic rotation from the model's root that might conflict with lookAt
-        // If the model loads with an inherent rotation that makes it not "Y-Up, Z-Forward" effectively,
-        // that needs to be addressed here or in the modeling software.
-        // For now, we assume the loader + model results in something that can be controlled.
+        teslaBotModel.scale.set(0.012, 0.012, 0.012);
+        teslaBotModel.rotation.set(0, 0, 0);
 
         botBBox = new THREE.Box3().setFromObject(teslaBotModel);
         teslaBotModel.traverse((child) => {
@@ -419,8 +416,8 @@ fbxLoader.load(
                 if (child.material) {
                     if (Array.isArray(child.material)) {
                         child.material.forEach(mat => {
-                            mat.metalness = 0.3; 
-                            mat.roughness = 0.7; 
+                            mat.metalness = 0.3;
+                            mat.roughness = 0.7;
                         });
                     } else {
                         child.material.metalness = 0.3;
@@ -432,16 +429,87 @@ fbxLoader.load(
 
         if (object.animations && object.animations.length) {
             botAnimationMixer = new THREE.AnimationMixer(teslaBotModel);
-            botPushAction = botAnimationMixer.clipAction(object.animations[0]);
-            botPushAction.setLoop(THREE.LoopOnce);
-            botPushAction.clampWhenFinished = true;
+            console.log(`Found ${object.animations.length} animation clips in FBX:`);
+            object.animations.forEach(clip => {
+                console.log(`- Clip name: "${clip.name}", Duration: ${clip.duration.toFixed(2)}s`);
+            });
+
+            // Attempt to find clips by specific names
+            // Adjust these names if the console log shows different ones.
+            let walkClip = object.animations.find(clip => clip.name === 'Walk');
+            let pushClip = object.animations.find(clip => clip.name === 'Push');
+
+            // Fallback or alternative names if the simple ones aren't found
+            if (!walkClip) {
+                walkClip = object.animations.find(clip => clip.name === 'Armature|Walk');
+            }
+            if (!walkClip) { // Try another common pattern if Autodesk FBX Review shows "Walk" but it's nested
+                // More robust check for names that *contain* Walk, case-insensitive
+                walkClip = object.animations.find(clip => clip.name.toLowerCase().includes('walk'));
+            }
+
+
+            if (!pushClip) {
+                pushClip = object.animations.find(clip => clip.name === 'Armature|Push');
+            }
+            if (!pushClip) { // Try another common pattern
+                // More robust check for names that *contain* Push, case-insensitive
+                pushClip = object.animations.find(clip => clip.name.toLowerCase().includes('push'));
+            }
+
+
+            if (!walkClip) {
+                console.error("Walk animation clip not found. Please check FBX animation names. Available clips:", object.animations.map(c => c.name));
+            } else {
+                console.log(`Found Walk clip: "${walkClip.name}", Duration ${walkClip.duration.toFixed(2)}s`);
+                botWalkAction = botAnimationMixer.clipAction(walkClip);
+                botWalkAction.setLoop(THREE.LoopRepeat, Infinity);
+                botWalkAction.clampWhenFinished = false;
+                botWalkAction.timeScale = 1; // Keep animation playback speed normal
+            }
+
+            if (!pushClip) {
+                console.error("Push animation clip not found. Please check FBX animation names. Available clips:", object.animations.map(c => c.name));
+            } else {
+                console.log(`Found Push clip: "${pushClip.name}", Duration ${pushClip.duration.toFixed(2)}s`);
+                botPushAction = botAnimationMixer.clipAction(pushClip);
+                botPushAction.setLoop(THREE.LoopOnce);
+                botPushAction.clampWhenFinished = true;
+            }
+            
+            // Additional check: ensure actions are created if clips are valid
+            if (!botWalkAction) console.error("botWalkAction was not created.");
+            if (!botPushAction) console.error("botPushAction was not created.");
+
         } else {
-            console.warn("TeslaBot model loaded, but no animations found.");
+            console.warn("TeslaBot model loaded, but no animations found in the 'animations' array.");
         }
 
         teslaBotModel.visible = false;
         scene.add(teslaBotModel);
-        console.log("TeslaBot model loaded.");
+        console.log("TeslaBot model processed.");
+
+        // --- IMPORTANT NOTE FOR BOT MOVEMENT SPEED ---
+        // To adjust the bot's physical walking speed to match its animation,
+        // you need to modify the 'walkingSpeed' variable.
+        // This variable is located in the 'positionAndAnimateBot' function
+        // elsewhere in your main HTML file.
+        //
+        // Example:
+        // Inside function positionAndAnimateBot(...):
+        //   ...
+        //   const distance = startPosition.distanceTo(finalBotPosition);
+        //   const walkingSpeed = 1.5; // <<< CHANGE THIS VALUE
+        //   // Try increasing it, e.g., to 2.5 or 3.0, to make the bot move faster.
+        //   // const walkingSpeed = 3.0;
+        //   const moveDuration = distance / walkingSpeed;
+        //   ...
+        //
+        // The 'timeScale' property of botWalkAction (set above) controls the
+        // animation playback speed itself. For your request ("keep the leg movement as it is"),
+        // botWalkAction.timeScale should generally remain 1.
+        // The 'walkingSpeed' variable controls how fast the bot's model translates
+        // across the scene.
     },
     (xhr) => { /* console.log((xhr.loaded / xhr.total * 100) + '% loaded - Bot'); */ },
     (error) => {
@@ -449,6 +517,8 @@ fbxLoader.load(
         showNotification("Error: Could not load TeslaBot model.", true);
     }
 );
+
+
 		
     // --- Save/Load Functionality ---
     function saveSceneToXML() {
@@ -1119,8 +1189,15 @@ fbxLoader.load(
 
     // --- Bot Placement and Animation ---
 // --- Bot Placement and Animation ---
-function positionAndAnimateBot(targetDominoDataForBot, pushDirForBot) {
-    if (!teslaBotModel || !botAnimationMixer || !botPushAction || !targetDominoDataForBot) {
+function positionAndAnimateBot(targetDominoDataForBot, pushDirForBot, startPosition = new THREE.Vector3(0, 0, 0)) {
+    if (!teslaBotModel || !botAnimationMixer || !botWalkAction || !botPushAction || !targetDominoDataForBot) {
+        console.error("Animation failed:", {
+            teslaBotModel: !!teslaBotModel,
+            botAnimationMixer: !!botAnimationMixer,
+            botWalkAction: !!botWalkAction,
+            botPushAction: !!botPushAction,
+            targetDominoDataForBot: !!targetDominoDataForBot
+        });
         showNotification("TeslaBot or target not ready for animation.", true);
         isBotAnimatingPush = false;
         if (!isSimulating) controls.enabled = true;
@@ -1138,81 +1215,131 @@ function positionAndAnimateBot(targetDominoDataForBot, pushDirForBot) {
         dominoBody.quaternion.w
     );
 
-    // Determine push direction in world space (along domino's local X-axis)
     let pushWorldDirection = new THREE.Vector3(pushDirForBot === 'positiveX' ? 1 : -1, 0, 0);
     pushWorldDirection.applyQuaternion(dominoQuaternion);
 
-    // Place bot on the opposite side of the push direction
     const botPlacementDirection = pushWorldDirection.clone().negate();
 
-    // Calculate bot position relative to domino
-    const botPosition = new THREE.Vector3().copy(dominoBody.position);
-    const botOffsetDistance = (DOMINO_THICK / 2) + 0.5 + 0.58; // Half domino thickness + bot depth estimate + gap
-    botPosition.addScaledVector(botPlacementDirection, botOffsetDistance);
+    const finalBotPosition = new THREE.Vector3().copy(dominoBody.position);
+    const botOffsetDistance = (DOMINO_THICK / 2) + 0.5 + 0.58;
+    finalBotPosition.addScaledVector(botPlacementDirection, botOffsetDistance);
 
-    // Ensure bot stands on grid (Y=0) by adjusting based on bounding box
-    //const botBBox = new THREE.Box3().setFromObject(teslaBotModel);
-    const botHeight = botBBox.max.y - botBBox.min.y;
-    botPosition.y = -botBBox.min.y-0.7; // Shift so bottom of bot is at Y=0
+    /*const botBBox = new THREE.Box3().setFromObject(teslaBotModel);
+    finalBotPosition.y = -botBBox.min.y;
+    startPosition.y = -botBBox.min.y;*/
+	
+	finalBotPosition.y = 0; // Set bot's base directly on the ground
+startPosition.y = 0;    // Ensure start position is also on the ground
 
-    // Apply position
-    teslaBotModel.position.copy(botPosition);
-
-    // Reset and set orientation
-    teslaBotModel.rotation.set(0, 0, 0); // Clear previous rotations
-    teslaBotModel.up.set(0, 1, 0); // Ensure Y-Up convention
-
-    // Make bot face the domino
-    const lookAtTarget = new THREE.Vector3().copy(dominoBody.position);
-    lookAtTarget.y = botPosition.y; // Match bot's Y-level for horizontal look
-    teslaBotModel.lookAt(lookAtTarget);
-
-    // Adjust for model’s forward direction (if -Z, rotate 180° around Y)
-    teslaBotModel.rotateY(Math.PI);
-
+    teslaBotModel.position.copy(startPosition);
+    teslaBotModel.rotation.set(0, 0, 0);
+    teslaBotModel.up.set(0, 1, 0);
     teslaBotModel.visible = true;
 
-    // Start animation
+    const lookAtTarget = new THREE.Vector3().copy(dominoBody.position);
+    lookAtTarget.y = startPosition.y;
+    teslaBotModel.lookAt(lookAtTarget);
+    teslaBotModel.rotateY(Math.PI);
+
+    const distance = startPosition.distanceTo(finalBotPosition);
+    const walkingSpeed = 3.3;
+    const moveDuration = distance / walkingSpeed;
+    console.log(`Distance: ${distance.toFixed(2)}m, Move Duration: ${moveDuration.toFixed(2)}s`);
+
     botAnimationMixer.stopAllAction();
-    botPushAction.reset();
-    botPushAction.play();
+    botWalkAction.reset();
+    botWalkAction.setLoop(THREE.LoopRepeat, Infinity);
+    botWalkAction.timeScale = 1;
+    botWalkAction.play();
+    console.log("Walking animation started, duration:", botWalkAction.getClip().duration);
 
-    const onAnimationFinish = (event) => {
-        if (event.action === botPushAction) {
-            botAnimationMixer.removeEventListener('finished', onAnimationFinish);
+    const startTime = performance.now();
+    let lastTime = startTime;
+    let hasTransitionedToPush = false;
 
-            let localImpulse = new CANNON.Vec3();
-            if (pushDirForBot === 'positiveX') localImpulse.set(IMPULSE_MAGNITUDE, 0, 0);
-            else localImpulse.set(-IMPULSE_MAGNITUDE, 0, 0);
+    function moveBot() {
+        const currentTime = performance.now();
+        const delta = (currentTime - lastTime) / 1000;
+        const totalElapsed = (currentTime - startTime) / 1000;
+        lastTime = currentTime;
+        const t = Math.min(totalElapsed / moveDuration, 1);
 
-            const appPointLocal = new CANNON.Vec3(
-                pushDirForBot === 'positiveX' ? -DOMINO_THICK / 2 : DOMINO_THICK / 2,
-                DOMINO_TALL * 0.45,
-                0
-            );
+        teslaBotModel.position.lerpVectors(startPosition, finalBotPosition, t);
 
-            const worldImpulse = dominoBody.quaternion.vmult(localImpulse);
-            const worldApplicationPoint = dominoBody.quaternion.vmult(appPointLocal);
-            worldApplicationPoint.vadd(dominoBody.position, worldApplicationPoint);
+        const lookAtTarget = new THREE.Vector3().copy(dominoBody.position);
+        lookAtTarget.y = teslaBotModel.position.y;
+        teslaBotModel.lookAt(lookAtTarget);
+        teslaBotModel.rotateY(Math.PI);
 
-            startSimulation({
-                targetBody: dominoBody,
-                worldImpulse: worldImpulse,
-                worldApplicationPoint: worldApplicationPoint
-            });
+        botAnimationMixer.update(delta);
+        console.log(`Walk animation time: ${botWalkAction.time.toFixed(2)}s, t: ${t.toFixed(2)}, totalElapsed: ${totalElapsed.toFixed(2)}s, moveDuration: ${moveDuration.toFixed(2)}s, isWalkRunning: ${botWalkAction.isRunning()}`);
 
-            setTimeout(() => {
-                teslaBotModel.visible = false;
-                isBotAnimatingPush = false;
-                if (!isSimulating) controls.enabled = true;
-            }, 700);
+        if (t >= 1 && totalElapsed >= moveDuration && !hasTransitionedToPush) {
+            hasTransitionedToPush = true;
+            botWalkAction.stop(); // Stop walk to prevent blending
+            botPushAction.reset();
+            botPushAction.setLoop(THREE.LoopOnce);
+            botPushAction.clampWhenFinished = true;
+            botPushAction.play();
+            console.log("Push animation started, duration:", botPushAction.getClip().duration);
+            console.log("Bot position at push:", teslaBotModel.position);
+
+            const onAnimationFinish = (event) => {
+                if (event.action === botPushAction) {
+                    console.log("Push animation finished");
+                    botAnimationMixer.removeEventListener('finished', onAnimationFinish);
+
+                    let localImpulse = new CANNON.Vec3();
+                    if (pushDirForBot === 'positiveX') localImpulse.set(IMPULSE_MAGNITUDE || 10, 0, 0);
+                    else localImpulse.set(-(IMPULSE_MAGNITUDE || 10), 0, 0);
+
+                    const appPointLocal = new CANNON.Vec3(
+                        pushDirForBot === 'positiveX' ? -DOMINO_THICK / 2 : DOMINO_THICK / 2,
+                        DOMINO_TALL * 0.45,
+                        0
+                    );
+
+                    const worldImpulse = dominoBody.quaternion.vmult(localImpulse);
+                    const worldApplicationPoint = dominoBody.quaternion.vmult(appPointLocal);
+                    worldApplicationPoint.vadd(dominoBody.position, worldApplicationPoint);
+
+                    console.log("Applying impulse:", worldImpulse, "at point:", worldApplicationPoint);
+                    console.log("Domino mass:", dominoBody.mass, "Domino position:", dominoBody.position);
+
+                    startSimulation({
+                        targetBody: dominoBody,
+                        worldImpulse: worldImpulse,
+                        worldApplicationPoint: worldApplicationPoint
+                    });
+
+                    setTimeout(() => {
+                        teslaBotModel.visible = false;
+                        isBotAnimatingPush = false;
+                        if (!isSimulating) controls.enabled = true;
+                        showNotification("Domino collapse started");
+                        console.log("Domino velocity after push:", dominoBody.velocity);
+                    }, botPushAction.getClip().duration * 1000);
+                }
+            };
+            botAnimationMixer.addEventListener('finished', onAnimationFinish);
+
+            showNotification("TeslaBot is pushing...");
+        } else if (t < 1) {
+            requestAnimationFrame(moveBot);
         }
-    };
-    botAnimationMixer.addEventListener('finished', onAnimationFinish);
+    }
 
-    showNotification("TeslaBot is pushing...");
+    setTimeout(() => {
+        if (isBotAnimatingPush && botWalkAction.isRunning() && !hasTransitionedToPush) {
+            console.log("Fallback: Forcing push animation");
+            botWalkAction.stop();
+            moveBot();
+        }
+    }, (moveDuration + 3) * 1000);
+
+    console.log("Starting bot animation, startTime:", startTime);
+    requestAnimationFrame(moveBot);
 }
-
 
     // --- Simulation Control ---
     function startSimulation(impulseData = null) { 
@@ -1642,36 +1769,35 @@ function positionAndAnimateBot(targetDominoDataForBot, pushDirForBot) {
         raycaster.setFromCamera(mouse, camera);
 
         // --- Bot Simulation Arrow Click ---
-        if (isSelectingBotSimulationDirection && simulationTargetData && teslaBotModel && botPushAction) {
-            const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
-            const intersectsArrows = raycaster.intersectObjects(simulationArrows, true);
+if (isSelectingBotSimulationDirection && simulationTargetData && teslaBotModel && botAnimationMixer && botWalkAction && botPushAction) {
+    const simulationArrows = scene.children.filter(c => c.userData && c.userData.isSimulationArrow);
+    const intersectsArrows = raycaster.intersectObjects(simulationArrows, true);
 
-            if (intersectsArrows.length > 0) {
-                let clickedArrowPart = intersectsArrows[0].object;
-                let actualArrow = clickedArrowPart.userData.parentArrow || (clickedArrowPart.userData.isSimulationArrow ? clickedArrowPart : null);
-                
-                if (actualArrow && (actualArrow.userData.direction === 'positiveX_bot' || actualArrow.userData.direction === 'negativeX_bot')) {
-                    const directionForBot = actualArrow.userData.direction.startsWith('positiveX') ? 'positiveX' : 'negativeX';
-                    
-                    // Store target and direction for bot, then trigger bot placement and animation
-                    botTargetDominoData = simulationTargetData; 
-                    botPushDirection = directionForBot;
-                    
-                    positionAndAnimateBot(botTargetDominoData, botPushDirection); // This will handle the rest
+    if (intersectsArrows.length > 0) {
+        let clickedArrowPart = intersectsArrows[0].object;
+        let actualArrow = clickedArrowPart.userData.parentArrow || (clickedArrowPart.userData.isSimulationArrow ? clickedArrowPart : null);
 
-                    isSelectingBotSimulationDirection = false;
-                    simulationTargetData = null; 
-                    clearSimulationArrows(); 
-                    // controls.enabled is handled by positionAndAnimateBot
-                    return; 
-                }
-            } else { // Clicked outside arrows while in bot selection mode
-                clearSimulationArrows(); // This will reset isSelectingBotSimulationDirection
-                showNotification("Bot simulation direction selection canceled.");
-                // simulationTargetData is cleared by clearSimulationArrows
-            }
-            return; 
+        if (actualArrow && (actualArrow.userData.direction === 'positiveX_bot' || actualArrow.userData.direction === 'negativeX_bot')) {
+            const directionForBot = actualArrow.userData.direction.startsWith('positiveX') ? 'positiveX' : 'negativeX';
+
+            // Store target and direction
+            botTargetDominoData = simulationTargetData;
+            botPushDirection = directionForBot;
+
+            // Call animation
+            positionAndAnimateBot(botTargetDominoData, botPushDirection);
+
+            isSelectingBotSimulationDirection = false;
+            simulationTargetData = null;
+            clearSimulationArrows();
+            return;
         }
+    } else {
+        clearSimulationArrows();
+        showNotification("Bot simulation direction selection canceled.");
+    }
+    return;
+}
 
 
         // --- Regular Simulation Arrow Click ---
