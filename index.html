@@ -247,12 +247,15 @@
             scene,
             camera
         );
-        outlinePass.visibleEdgeColor.set(0x0044cc);
-        outlinePass.hiddenEdgeColor.set(0x002266);
-        outlinePass.edgeStrength = 5;
-        outlinePass.edgeGlow = 1.0;
-        outlinePass.edgeThickness = 2;
-        outlinePass.pulsePeriod = 0;
+// Color: exact match to the bright cyan glow in the reference image
+outlinePass.visibleEdgeColor.set(0x00ffff);      // #00FFFF — this is the one
+
+// Hidden edges stay dark/subtle for depth (matches typical usage)
+outlinePass.hiddenEdgeColor.set(0x004444);
+outlinePass.edgeStrength   = 7;               // stronger contrast/pop (was 9)
+outlinePass.edgeGlow       = 1.4;                // more noticeable soft halo/magic glow (was 1.0)
+outlinePass.edgeThickness  = 4.2; 
+        outlinePass.pulsePeriod = 1;
         composer.addPass(outlinePass);
 
         const fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
@@ -1048,16 +1051,18 @@ fbxLoader.load(
 
         // Build the stem as a cylinder mesh
         const stemGeom = new THREE.CylinderGeometry(stemRadius, stemRadius, stemLength, 8);
-        const stemMat = new THREE.MeshBasicMaterial({ color: color });
+        const stemMat = new THREE.MeshBasicMaterial({ color: color, depthTest: false });
         const stemMesh = new THREE.Mesh(stemGeom, stemMat);
         stemMesh.position.set(0, stemLength / 2, 0);
+        stemMesh.renderOrder = 999;
         arrowGroup.add(stemMesh);
 
         // Build the cone head
         const coneGeom = new THREE.ConeGeometry(headWidth / 2, headLength, 12);
-        const coneMat = new THREE.MeshBasicMaterial({ color: color });
+        const coneMat = new THREE.MeshBasicMaterial({ color: color, depthTest: false });
         const coneMesh = new THREE.Mesh(coneGeom, coneMat);
         coneMesh.position.set(0, stemLength + headLength / 2, 0);
+        coneMesh.renderOrder = 999;
         arrowGroup.add(coneMesh);
 
         // Rotate the group so +Y points along dir
