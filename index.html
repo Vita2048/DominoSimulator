@@ -199,6 +199,12 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script> {/* Added FBXLoader */}
 	<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/OutlinePass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
     <script>
         // --- Constants ---
         const DOMINO_TALL = 2.01642;
@@ -215,7 +221,7 @@
         const IMPULSE_MAGNITUDE = 3.5; // Adjusted for potentially heavier bot interaction if needed
         const ARROW_COLOR_DEFAULT = 0xff0000;
         const ARROW_COLOR_HOVER = 0x0077ff;
-        const BOT_URL = 'https://vita2048.github.io/DominoSimulator/TeslaBotWalkOnSportPushYUpZForward1.fbx';
+        const BOT_URL = 'https://vita2048.github.io/DominoSimulator/TeslaBot.fbx';
 		
         const BOT_ORIGINAL_HEIGHT = 2.64047; // meters
 
@@ -230,6 +236,28 @@
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 20, 30);
         camera.lookAt(0, 0, 0);
+
+        // --- Post-Processing (OutlinePass) ---
+        const composer = new THREE.EffectComposer(renderer);
+        const renderPass = new THREE.RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const outlinePass = new THREE.OutlinePass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            scene,
+            camera
+        );
+        outlinePass.visibleEdgeColor.set(0x0044cc);
+        outlinePass.hiddenEdgeColor.set(0x002266);
+        outlinePass.edgeStrength = 5;
+        outlinePass.edgeGlow = 1.0;
+        outlinePass.edgeThickness = 2;
+        outlinePass.pulsePeriod = 0;
+        composer.addPass(outlinePass);
+
+        const fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+        fxaaPass.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+        composer.addPass(fxaaPass);
 
         // --- Lighting ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -831,8 +859,8 @@ fbxLoader.load(
 
     function updateHoverEffect(event) {
         if (isAddingDomino || isSimulating || translationMode || rotationMode || isSelectingSimulationDirection || isSelectingBotSimulationDirection || isBotAnimatingPush) {
-            if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
-                setEmissive(hoveredDominoData, 0x000000); 
+            if (hoveredDominoData) {
+                outlinePass.selectedObjects = [];
             }
             hoveredDominoData = null;
             return;
@@ -851,13 +879,12 @@ fbxLoader.load(
         }
 
         if (hoveredDominoData !== currentlyHoveredData) {
-            if (hoveredDominoData && hoveredDominoData !== selectedDominoData) {
-                setEmissive(hoveredDominoData, 0x000000); 
-            }
-            if (currentlyHoveredData && currentlyHoveredData !== selectedDominoData) {
-                setEmissive(currentlyHoveredData, HOVER_COLOR, 1.5); 
-            }
             hoveredDominoData = currentlyHoveredData;
+            if (currentlyHoveredData && currentlyHoveredData !== selectedDominoData) {
+                outlinePass.selectedObjects = [currentlyHoveredData.mesh];
+            } else {
+                outlinePass.selectedObjects = [];
+            }
         }
     }
 
@@ -878,8 +905,9 @@ fbxLoader.load(
         if (selectedDominoData) {
             setEmissive(selectedDominoData, SELECT_COLOR, 1.5); 
             if (hoveredDominoData === selectedDominoData) {
-                hoveredDominoData = null; 
+                hoveredDominoData = null;
             }
+            outlinePass.selectedObjects = [selectedDominoData.mesh];
         } else {
             if (translationMode || rotationMode) { 
                 translationMode = false;
@@ -890,9 +918,7 @@ fbxLoader.load(
                 controls.enabled = true;
                 if (rotationArrowSprite) scene.remove(rotationArrowSprite);
             }
-            if (hoveredDominoData) {
-                 setEmissive(hoveredDominoData, HOVER_COLOR, 1.5);
-            }
+            outlinePass.selectedObjects = [];
         }
         hideContextMenu();
     }
@@ -1010,16 +1036,49 @@ fbxLoader.load(
     }
 
     function createSimulationArrowHelper(origin, directionVec, color, userDataDirection) {
-        const length = 1.0; const headLength = 0.3; const headWidth = 0.2;
-        const arrowHelper = new THREE.ArrowHelper(directionVec.clone().normalize(), origin, length, color, headLength, headWidth);
-        arrowHelper.userData.isSimulationArrow = true;
-        arrowHelper.userData.direction = userDataDirection; 
-        arrowHelper.userData.originalColor = color;
-        arrowHelper.userData.isPulsing = false;
-        arrowHelper.userData.pulseTime = 0;
-        arrowHelper.line.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
-        arrowHelper.cone.userData = { isSimulationArrowPart: true, parentArrow: arrowHelper };
-        return arrowHelper;
+        const dir = directionVec.clone().normalize();
+        const totalLength = 1.0;
+        const headLength = 0.3;
+        const headWidth = 0.4;
+        const stemLength = totalLength - headLength;
+        const stemRadius = 0.06;
+
+        const arrowGroup = new THREE.Group();
+        arrowGroup.position.copy(origin);
+
+        // Build the stem as a cylinder mesh
+        const stemGeom = new THREE.CylinderGeometry(stemRadius, stemRadius, stemLength, 8);
+        const stemMat = new THREE.MeshBasicMaterial({ color: color });
+        const stemMesh = new THREE.Mesh(stemGeom, stemMat);
+        stemMesh.position.set(0, stemLength / 2, 0);
+        arrowGroup.add(stemMesh);
+
+        // Build the cone head
+        const coneGeom = new THREE.ConeGeometry(headWidth / 2, headLength, 12);
+        const coneMat = new THREE.MeshBasicMaterial({ color: color });
+        const coneMesh = new THREE.Mesh(coneGeom, coneMat);
+        coneMesh.position.set(0, stemLength + headLength / 2, 0);
+        arrowGroup.add(coneMesh);
+
+        // Rotate the group so +Y points along dir
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        arrowGroup.quaternion.copy(quaternion);
+
+        arrowGroup.userData.isSimulationArrow = true;
+        arrowGroup.userData.direction = userDataDirection;
+        arrowGroup.userData.originalColor = color;
+        arrowGroup.userData.isPulsing = false;
+        arrowGroup.userData.pulseTime = 0;
+
+        // Store references for outline and pulsing
+        arrowGroup.stem = stemMesh;
+        arrowGroup.cone = coneMesh;
+
+        stemMesh.userData = { isSimulationArrowPart: true, parentArrow: arrowGroup };
+        coneMesh.userData = { isSimulationArrowPart: true, parentArrow: arrowGroup };
+
+        return arrowGroup;
     }
 
     function clearSimulationArrows() {
@@ -1031,6 +1090,7 @@ fbxLoader.load(
             }
             scene.remove(arrow); 
         });
+        outlinePass.selectedObjects = [];
         // Reset states for both types of simulation selections
         if (isSelectingSimulationDirection || isSelectingBotSimulationDirection) {
             isSelectingSimulationDirection = false;
@@ -1692,6 +1752,8 @@ startPosition.y = 0;    // Ensure start position is also on the ground
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            fxaaPass.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
             hideContextMenu();
         }, false);
 
@@ -1976,15 +2038,16 @@ if (isSelectingBotSimulationDirection && simulationTargetData && teslaBotModel &
             }
 
             if (hoveredSimulationArrow && hoveredSimulationArrow !== intersectedArrowThisFrame) {
-                setArrowColor(hoveredSimulationArrow, hoveredSimulationArrow.userData.originalColor);
                 hoveredSimulationArrow.userData.isPulsing = false;
                 if (hoveredSimulationArrow.cone) hoveredSimulationArrow.cone.scale.set(1, 1, 1); 
+                outlinePass.selectedObjects = [];
             }
             if (intersectedArrowThisFrame) {
-                setArrowColor(intersectedArrowThisFrame, ARROW_COLOR_HOVER);
+                outlinePass.selectedObjects = [intersectedArrowThisFrame.stem, intersectedArrowThisFrame.cone];
                 intersectedArrowThisFrame.userData.isPulsing = true; 
                 document.body.style.cursor = 'pointer';
             } else {
+                outlinePass.selectedObjects = [];
                 document.body.style.cursor = 'default';
             }
             hoveredSimulationArrow = intersectedArrowThisFrame;
@@ -2313,7 +2376,7 @@ if (isSelectingBotSimulationDirection && simulationTargetData && teslaBotModel &
         });
 
         if(controls.enabled) controls.update();  // Only update controls if enabled
-        renderer.render(scene, camera);
+        composer.render();
     }
 
     // --- Initialization ---
